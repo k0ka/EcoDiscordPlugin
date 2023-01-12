@@ -5,6 +5,8 @@ using Eco.Shared.Serialization;
 using Eco.Shared.Utils;
 using System;
 using System.ComponentModel;
+using System.Linq;
+using DSharpPlus;
 
 namespace Eco.Plugins.DiscordLink
 {
@@ -55,6 +57,12 @@ namespace Eco.Plugins.DiscordLink
         [Description("Discord Channel by name or ID.")]
         public string DiscordChannel { get; set; } = string.Empty;
 
+        [Browsable(false), JsonIgnore]
+        public DiscordGuild Guild { get; private set; } = null;
+        
+        [Description("Discord Server by name or ID.")]
+        public string DiscordServer { get; set; } = string.Empty;
+        
         public override string ToString()
         {
             string channelName = IsValid() ? Channel.Name : DiscordChannel;
@@ -72,8 +80,17 @@ namespace Eco.Plugins.DiscordLink
         {
             if (string.IsNullOrWhiteSpace(DiscordChannel))
                 return false;
+            
+            Guild = string.IsNullOrEmpty(DiscordServer) 
+                ? DiscordLink.Obj.Client.Guild
+                : Utilities.Utils.TryParseSnowflakeID(DiscordServer, out ulong ID)
+                    ? DiscordLink.Obj.Client.DiscordClient.Guilds.Values.FirstOrDefault(guild => guild.Id == ID)
+                    : DiscordLink.Obj.Client.DiscordClient.Guilds.Values.FirstOrDefault(guild => guild.Name.EqualsCaseInsensitive(DiscordServer));
 
-            DiscordChannel channel = DiscordLink.Obj.Client.Guild.ChannelByNameOrID(DiscordChannel);
+            if (Guild == null)
+                return false;
+            
+            DiscordChannel channel = Guild.ChannelByNameOrID(DiscordChannel);
             if (channel == null)
                 return false;
 

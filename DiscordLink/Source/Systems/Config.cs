@@ -82,7 +82,12 @@ namespace Eco.Plugins.DiscordLink
         public static IEnumerable<ChatChannelLink> ChatLinksForDiscordChannel(DiscordChannel channel) =>
             Data.ChatChannelLinks.Where(link
                 => link.IsValid()
-                && (link.DiscordChannel.EqualsCaseInsensitive(channel.Name) || link.DiscordChannel.EqualsCaseInsensitive(channel.Id.ToString())));
+                && (
+                    link.DiscordChannel.EqualsCaseInsensitive(channel.Name)
+                    || link.DiscordChannel.EqualsCaseInsensitive(channel.Id.ToString())
+                    )
+                && (channel.Guild.Id == link.Guild.Id)
+                );
 
         public delegate Task OnConfigChangedDelegate(object sender, EventArgs e);
         public event OnConfigChangedDelegate OnConfigChanged;

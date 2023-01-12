@@ -6,6 +6,7 @@ using Eco.Plugins.DiscordLink.Utilities;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Eco.Gameplay.GameActions;
 
 namespace Eco.Plugins.DiscordLink.Modules
 {
@@ -47,8 +48,32 @@ namespace Eco.Plugins.DiscordLink.Modules
         private async Task ForwardMessageToEcoChannel(DiscordLink plugin, DiscordMessage message, string ecoChannel)
         {
             Logger.DebugVerbose($"Sending Discord message to Eco channel: {ecoChannel}");
-            EcoUtils.SendChatRaw(await MessageUtils.FormatMessageForEco(message, ecoChannel));
+            var ecoMessage = await MessageUtils.FormatMessageForEco(message, ecoChannel);
+            EcoUtils.SendChatRaw(ecoMessage);
+            
+            // forward message to other servers
+            var forwardMessage = MessageUtils.GetReadableContent(message);
+            IEnumerable<ChatChannelLink> chatLinks = DLConfig.ChatLinksForEcoChannel(ecoChannel);
+            foreach (var chatLink in chatLinks)
+            {
+                if (chatLink.Guild.Id == message.Channel.Guild.Id)
+                {
+                    continue;
+                }
+                
+                ForwardMessageToDiscordChannel(forwardMessage, message.Author.Username, chatLink.Channel, chatLink.UseTimestamp, chatLink.HereAndEveryoneMentionPermission, chatLink.MentionPermissions);
+            }
+            
             ++_opsCount;
         }
+        
+        private void ForwardMessageToDiscordChannel(string message, string citizenName, DiscordChannel channel, bool useTimestamp, GlobalMentionPermission globalMentionPermission, ChatLinkMentionPermissions chatlinkPermissions)
+        {
+            Logger.DebugVerbose($"Forwarding Discord message to Discord channel {channel.Name}");
+
+            bool allowGlobalMention = globalMentionPermission == GlobalMentionPermission.AnyUser;
+
+            _ = DiscordLink.Obj.Client.SendMessageAsync(channel, MessageUtils.FormatMessageForDiscord(message, channel, citizenName, useTimestamp, allowGlobalMention, chatlinkPermissions));
+        }        
     }
 }
