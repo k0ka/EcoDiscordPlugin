@@ -378,13 +378,20 @@ namespace Eco.Plugins.DiscordLink
 
         private async void UpdateModules(DLEventType trigger, params object[] data)
         {
-            foreach(Module module in Modules)
+            for (var i = 0; i < Modules.Length; i++)
             {
+                var module = Modules[i];
+                if (module == null)
+                {
+                    Logger.Debug($"Module {i} is not initialized yet");
+                    continue;
+                }
+                
                 try
                 {
                     await module.Update(this, trigger, data);
                 }
-                catch(Exception e)
+                catch (Exception e)
                 {
                     Logger.Error($"An error occurred while updating module: {module}. Error: {e}");
                 }

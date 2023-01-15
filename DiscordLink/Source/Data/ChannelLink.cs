@@ -88,11 +88,17 @@ namespace Eco.Plugins.DiscordLink
                     : DiscordLink.Obj.Client.DiscordClient.Guilds.Values.FirstOrDefault(guild => guild.Name.EqualsCaseInsensitive(DiscordServer));
 
             if (Guild == null)
+            {
+                Logger.Error($"Guild {DiscordServer} not found");
                 return false;
+            }
             
             DiscordChannel channel = Guild.ChannelByNameOrID(DiscordChannel);
             if (channel == null)
+            {
+                Logger.Error($"Channel {DiscordChannel} not found in Guild {DiscordServer}");
                 return false;
+            }
 
             Channel = channel;
             return true;
