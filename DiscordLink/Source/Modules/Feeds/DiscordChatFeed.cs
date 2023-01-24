@@ -61,7 +61,14 @@ namespace Eco.Plugins.DiscordLink.Modules
                     continue;
                 }
                 
-                ForwardMessageToDiscordChannel(forwardMessage, message.Author.Username, chatLink.Channel, chatLink.UseTimestamp, chatLink.HereAndEveryoneMentionPermission, chatLink.MentionPermissions);
+                ForwardMessageToDiscordChannel(
+                    forwardMessage, 
+                    $"[{message.Channel.Guild.Name}] {message.Author.Username}",
+                    chatLink.Channel,
+                    chatLink.UseTimestamp,
+                    chatLink.HereAndEveryoneMentionPermission,
+                    chatLink.MentionPermissions
+                );
             }
             
             ++_opsCount;
