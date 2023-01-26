@@ -63,7 +63,7 @@ namespace Eco.Plugins.DiscordLink.Modules
                 
                 ForwardMessageToDiscordChannel(
                     forwardMessage, 
-                    $"[{message.Channel.Guild.Name}] {message.Author.Username}",
+                    $"[{GetGuildName(message.Channel.Guild)}] {message.Author.Username}",
                     chatLink.Channel,
                     chatLink.UseTimestamp,
                     chatLink.HereAndEveryoneMentionPermission,
@@ -72,6 +72,21 @@ namespace Eco.Plugins.DiscordLink.Modules
             }
             
             ++_opsCount;
+        }
+
+        private string GetGuildName(DiscordGuild guild)
+        {
+            switch (guild.Id)
+            {
+                case 662813412413276191:
+                    return "BCG";
+                case 433039858794233858:
+                    return "Comfy";
+                case 643910879200411668:
+                    return "Test";
+                default:
+                    return guild.Name;
+            }
         }
         
         private void ForwardMessageToDiscordChannel(string message, string citizenName, DiscordChannel channel, bool useTimestamp, GlobalMentionPermission globalMentionPermission, ChatLinkMentionPermissions chatlinkPermissions)
