@@ -2,13 +2,14 @@
 using System.Collections.Generic;
 using System.Linq;
 using Eco.Gameplay.Components;
+using Eco.Gameplay.Components.Store;
 using Eco.Gameplay.Items;
 using Eco.Gameplay.Objects;
 using Eco.Gameplay.Players;
 using Eco.Shared.Utils;
 
-using LookupEntry = Eco.Plugins.DiscordLink.Utilities.Either<Eco.Gameplay.Items.Item, Eco.Gameplay.Players.User, Eco.Gameplay.Items.Tag, Eco.Gameplay.Components.StoreComponent>;
-using StoreOfferList = System.Collections.Generic.IEnumerable<System.Linq.IGrouping<string, System.Tuple<Eco.Gameplay.Components.StoreComponent, Eco.Gameplay.Components.TradeOffer>>>;
+using LookupEntry = Eco.Plugins.DiscordLink.Utilities.Either<Eco.Gameplay.Items.Item, Eco.Gameplay.Players.User, Eco.Gameplay.Items.Tag, Eco.Gameplay.Components.Store.StoreComponent>;
+using StoreOfferList = System.Collections.Generic.IEnumerable<System.Linq.IGrouping<string, System.Tuple<Eco.Gameplay.Components.Store.StoreComponent, Eco.Gameplay.Components.TradeOffer>>>;
 
 namespace Eco.Plugins.DiscordLink.Utilities
 {
@@ -26,7 +27,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
         private static List<LookupEntry> _itemLookup = null;
 
         public static List<LookupEntry> ItemLookup =>
-            _itemLookup ??= Item.AllItems.Select(item => new LookupEntry(item)).ToList();
+            _itemLookup ??= Item.AllItemsExceptHidden.Select(item => new LookupEntry(item)).ToList();
 
         private static List<LookupEntry> _tagLookup = null;
 
@@ -121,7 +122,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
 
                 offerType = TradeTargetType.User;
             }
-            else if(match.Is<StoreComponent>())
+            else if (match.Is<StoreComponent>())
             {
                 StoreComponent matchStore = match.Get<StoreComponent>();
                 matchedName = matchStore.Parent.Name;
@@ -171,7 +172,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
         private static IEnumerable<Tag> FindTags()
         {
             List<Tag> uniqueTags = new List<Tag>();
-            foreach (Item item in Item.AllItems)
+            foreach (Item item in Item.AllItemsExceptHidden)
             {
                 foreach (Tag tag in item.Tags())
                 {

@@ -1,4 +1,5 @@
 ﻿using DSharpPlus.Entities;
+using Eco.Moose.Tools.Logger;
 using Eco.Plugins.DiscordLink.Events;
 using Eco.Plugins.DiscordLink.Extensions;
 using Eco.Plugins.DiscordLink.Utilities;
@@ -67,7 +68,7 @@ namespace Eco.Plugins.DiscordLink.Modules
                 if (!link.IsValid())
                     continue;
 
-                if (messageChannel.HasNameOrID(link.DiscordChannel))
+                if (messageChannel.Id == link.DiscordChannelId)
                 {
                     await ReloadSnippets();
                     break;
@@ -100,7 +101,7 @@ namespace Eco.Plugins.DiscordLink.Modules
                         if (!snippets.ContainsKey(key))
                             snippets.Add(key, content);
                         else
-                            Logger.Info($"Found duplicate Snippet key \"{key}\". Only the first instance of this Snippet will be loaded.");
+                            Logger.Warning($"Found duplicate Snippet key \"{key}\". Only the first instance of this Snippet will be loaded.");
                     }
                 }
             }

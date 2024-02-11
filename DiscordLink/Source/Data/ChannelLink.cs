@@ -1,12 +1,8 @@
 ﻿using DSharpPlus.Entities;
-using Eco.Plugins.DiscordLink.Extensions;
-using Eco.Plugins.DiscordLink.Utilities;
+using Eco.Moose.Tools.Logger;
 using Eco.Shared.Serialization;
-using Eco.Shared.Utils;
 using System;
 using System.ComponentModel;
-using System.Linq;
-using DSharpPlus;
 
 namespace Eco.Plugins.DiscordLink
 {
@@ -51,22 +47,23 @@ namespace Eco.Plugins.DiscordLink
 
     public class ChannelLink : DiscordTarget, ICloneable
     {
+        private const string DISCORD_CHANNEL_PROPERTY_DEPRECATED = "_This field is not supported anymore. Please use DiscordChannelId instead_";
+
         [Browsable(false), JsonIgnore]
         public DiscordChannel Channel { get; private set; } = null;
 
-        [Description("Discord Channel by name or ID.")]
-        public string DiscordChannel { get; set; } = string.Empty;
+        [Description("Discord Channel by ID.")]
+        [TypeConverter(typeof(DiscordChannelPropertyConverter))]
+        public ulong DiscordChannelId { get; set; } = 0;
 
-        [Browsable(false), JsonIgnore]
-        public DiscordGuild Guild { get; private set; } = null;
-        
-        [Description("Discord Server by name or ID.")]
-        public string DiscordServer { get; set; } = string.Empty;
-        
+        // Legacy Property, to support migrating to the new ID-Based Solution.
+        [Browsable(false)]
+        [Obsolete("Please use DiscordChannelId instead. This only exists for migration of the old Format.")]
+        public string DiscordChannel { get; set;  } = DISCORD_CHANNEL_PROPERTY_DEPRECATED;
+
         public override string ToString()
         {
-            string channelName = IsValid() ? Channel.Name : DiscordChannel;
-            return $"#{channelName}";
+            return IsValid() ? $"#{Channel.Name}" : $"<Unknown Channel Name> ({DiscordChannelId})";
         }
 
         public object Clone()
@@ -74,73 +71,51 @@ namespace Eco.Plugins.DiscordLink
             return MemberwiseClone();
         }
 
-        public override bool IsValid() => !string.IsNullOrWhiteSpace(DiscordChannel) && Channel != null;
+        public override bool IsValid() => DiscordChannelId != 0 && Channel != null;
 
-        public virtual bool Initailize()
+        public virtual bool Initialize()
         {
-            if (string.IsNullOrWhiteSpace(DiscordChannel))
-                return false;
-            
-            Guild = string.IsNullOrEmpty(DiscordServer) 
-                ? DiscordLink.Obj.Client.Guild
-                : Utilities.Utils.TryParseSnowflakeID(DiscordServer, out ulong ID)
-                    ? DiscordLink.Obj.Client.DiscordClient.Guilds.Values.FirstOrDefault(guild => guild.Id == ID)
-                    : DiscordLink.Obj.Client.DiscordClient.Guilds.Values.FirstOrDefault(guild => guild.Name.EqualsCaseInsensitive(DiscordServer));
 
-            if (Guild == null)
-            {
-                Logger.Error($"Guild {DiscordServer} not found");
-                return false;
-            }
+            MigrateOldChannelName();
             
-            DiscordChannel channel = Guild.ChannelByNameOrID(DiscordChannel);
-            if (channel == null)
-            {
-                Logger.Error($"Channel {DiscordChannel} not found in Guild {DiscordServer}");
+            if (DiscordChannelId == 0)
                 return false;
-            }
+
+            DiscordChannel channel = DiscordLink.Obj.Client.Guild.GetChannel(DiscordChannelId);
+            if (channel == null)
+                return false;
 
             Channel = channel;
             return true;
         }
 
+        // Migrates the old Property 'DiscordChannel' to the 'DiscordChannelId' Property. 
+        private void MigrateOldChannelName()
+        {
+#pragma warning disable CS0618 // Migration
+            if (DiscordChannelId != 0 || DiscordChannel.Equals(DISCORD_CHANNEL_PROPERTY_DEPRECATED)) return;
+
+            if (ulong.TryParse(DiscordChannel, out ulong channelId))
+            {
+                DiscordChannelId = channelId;
+            }
+            else
+            {
+               DiscordChannelId = DiscordChannelId = DiscordLink.Obj.Client.ChannelByNameOrID(DiscordChannel)?.Id ?? 0;
+            }
+            // Mark as Deprecated and show note in config file.
+            DiscordChannel = DISCORD_CHANNEL_PROPERTY_DEPRECATED;
+#pragma warning restore CS0618 // // Migration
+        }
+
         public virtual bool MakeCorrections()
         {
-            if (string.IsNullOrWhiteSpace(DiscordChannel))
-                return false;
-
-            bool correctionMade = false;
-            string original = DiscordChannel;
-            string channelNameLower = DiscordChannel.ToLower();
-            if (DiscordChannel != channelNameLower) // Discord channels are always lowercase
-                DiscordChannel = channelNameLower;
-
-            if (DiscordChannel.Contains(" "))
-                DiscordChannel = DiscordChannel.Replace(' ', '-'); // Discord channels always replace spaces with dashes
-
-            if (DiscordChannel != original)
-            {
-                correctionMade = true;
-                Logger.Info($"Corrected Discord channel name from \"{original}\" to \"{DiscordChannel}\"");
-            }
-
-            return correctionMade;
+            return false;
         }
 
         public bool IsChannel(DiscordChannel channel)
-        {
-            if (ulong.TryParse(DiscordChannel, out ulong channelID))
-                return channelID == channel.Id;
-
-            return DiscordChannel.EqualsCaseInsensitive(channel.Name);
-        }
-
-        public bool HasChannelNameOrID(string channelNameOrID)
-        {
-            if (ulong.TryParse(DiscordChannel, out ulong channelID) && ulong.TryParse(channelNameOrID, out ulong channelIDParam))
-                return channelID == channelIDParam;
-
-            return DiscordChannel.EqualsCaseInsensitive(channelNameOrID);
+        {  
+            return DiscordChannelId == channel.Id;
         }
     }
 
@@ -150,8 +125,8 @@ namespace Eco.Plugins.DiscordLink
         public string EcoChannel { get; set; } = string.Empty;
         public override string ToString()
         {
-            string discordChannelName = IsValid() ? Channel.Name : DiscordChannel;
-            return $"#{DiscordChannel} <--> {EcoChannel}";
+            string discordChannelName = IsValid() ? Channel.Name : "<Invalid Channel>";
+            return $"#{discordChannelName} <--> {EcoChannel}";
         }
 
         public override bool IsValid() => base.IsValid() && !string.IsNullOrWhiteSpace(EcoChannel);
@@ -164,7 +139,7 @@ namespace Eco.Plugins.DiscordLink
             if (EcoChannel != original)
             {
                 correctionMade = true;
-                Logger.Info($"Corrected Eco channel name linked with Discord Channel name/ID \"{DiscordChannel}\" from \"{original}\" to \"{EcoChannel}\"");
+                Logger.Info($"Corrected Eco channel name linked with Discord Channel name/ID \"{Channel?.Name ?? DiscordChannelId.ToString()}\" from \"{original}\" to \"{EcoChannel}\"");
             }
             return correctionMade;
         }
@@ -291,6 +266,12 @@ namespace Eco.Plugins.DiscordLink
 
         [Description("Display the amount of exhausted players.")]
         public bool UseExhaustedPlayerCount { get; set; } = false;
+
+        [Description("Display the number of settlements elections.")]
+        public bool UseSettlementCount { get; set; } = false;
+
+        [Description("Display a list of all active settlements.")]
+        public bool UseSettlementList { get; set; } = true;
 
         [Description("Display the number of active elections.")]
         public bool UseElectionCount { get; set; } = false;

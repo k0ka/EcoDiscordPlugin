@@ -1,4 +1,7 @@
-﻿using Eco.Gameplay.GameActions;
+﻿using Eco.Core.Utils;
+using Eco.Core.Utils.Logging;
+using Eco.Moose.Tools.Logger;
+using Eco.Gameplay.GameActions;
 using Eco.Gameplay.Objects;
 using Eco.Plugins.DiscordLink.Utilities;
 using Eco.Shared.Utils;
@@ -6,6 +9,7 @@ using Nito.AsyncEx;
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using Eco.Moose.Utils.SystemUtils;
 
 namespace Eco.Plugins.DiscordLink.Events
 {
@@ -23,14 +27,19 @@ namespace Eco.Plugins.DiscordLink.Events
 
     public sealed class EventConverter
     {
-        public static event EventHandler<DLEventArgs> OnEventFired;
+        public static readonly ThreadSafeAction<DLEventArgs> OnEventConverted = new ThreadSafeAction<DLEventArgs>();
 
         public static readonly EventConverter Instance = new EventConverter();
 
+        private const int LOG_POSTING_INTERVAL_MS = 1000;
         private const int TRADE_POSTING_INTERVAL_MS = 1000;
+        private readonly List<Tuple<Logger.LogLevel, string>> _accumulatedLogs = new List<Tuple<Logger.LogLevel, string>>();
         private readonly Dictionary<Tuple<int, int>, List<CurrencyTrade>> _accumulatedTrades = new Dictionary<Tuple<int, int>, List<CurrencyTrade>>();
+        private Timer _logPostingTimer = null;
         private Timer _tradePostingTimer = null;
-        private readonly AsyncLock _overlapLock = new AsyncLock();
+        private readonly AsyncLock _accumulatedLogssoverlapLock = new AsyncLock();
+        private readonly AsyncLock _accumulatedTradesoverlapLock = new AsyncLock();
+        private readonly AsyncLock _accumulatedLogsLock = new AsyncLock();
         private readonly AsyncLock _accumulatedTradesLock = new AsyncLock();
 
         // Explicit static constructor to tell C# compiler not to mark type as beforefieldinit
@@ -44,9 +53,10 @@ namespace Eco.Plugins.DiscordLink.Events
 
         public void Initialize()
         {
+            // Initialize trade accumulation
             _tradePostingTimer = new Timer(InnerArgs =>
             {
-                using (_overlapLock.Lock()) // Make sure this code isn't entered multiple times simultaniously
+                using (_accumulatedTradesoverlapLock.Lock()) // Make sure this code isn't entered multiple times simultaniously
                 {
                     try
                     {
@@ -63,18 +73,48 @@ namespace Eco.Plugins.DiscordLink.Events
                             FireEvent(DLEventType.AccumulatedTrade, (object)trades);
                         }
                     }
-                    catch(Exception e)
+                    catch (Exception e)
                     {
-                        Logger.Error($"Failed to accumulate trade events. Error: {e}");
+                        Logger.Exception($"Failed to accumulate trade events", e);
                     }
                 }
 
             }, null, 0, TRADE_POSTING_INTERVAL_MS);
+
+            // Initialize log accumulation
+            _logPostingTimer = new Timer(InnerArgs =>
+            {
+                using (_accumulatedLogssoverlapLock.Lock()) // Make sure this code isn't entered multiple times simultaniously
+                {
+                    try
+                    {
+                        if (_accumulatedLogs.Count > 0 && DiscordLink.Obj.Status == DiscordLink.StatusState.Connected )
+                        {
+                            // Fire the accumulated event
+                            Tuple<Logger.LogLevel, string>[] logs = null;
+                            using (_accumulatedLogsLock.Lock())
+                            {
+                                logs = _accumulatedLogs.ToArray();
+                                _accumulatedLogs.Clear();
+                            }
+                            FireEvent(DLEventType.AccumulatedServerLog, (object)logs);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        Logger.Trace($"Failed to accumulate log events. Exception: {e}"); // Using trace log only as it's risky to log here since we could cause a feedback loop.
+                    }
+                }
+            }, null, 0, LOG_POSTING_INTERVAL_MS);
+
+            // Start listening for log events
+            ClientLogEventTrigger.OnLogWritten += (message) => AccumulateLogEvent(message);
         }
 
         public void Shutdown()
         {
             SystemUtils.StopAndDestroyTimer(ref _tradePostingTimer);
+            SystemUtils.StopAndDestroyTimer(ref _logPostingTimer);
         }
 
         public void HandleEvent(DLEventType eventType, params object[] data)
@@ -87,7 +127,11 @@ namespace Eco.Plugins.DiscordLink.Events
 
                     // Store the event in a list in order to accumulate trade events that should be considered as one. We do this as each item in a trade will fire an individual event and we want to summarize them
                     Tuple<int, int> IDTuple = new Tuple<int, int>(tradeEvent.Citizen.Id, (tradeEvent.WorldObject as WorldObject).ID);
-                    _accumulatedTrades.TryGetValue(IDTuple, out List<CurrencyTrade> trades);
+                    List<CurrencyTrade> trades;
+                    using (_accumulatedTradesLock.Lock())
+                    {
+                        _accumulatedTrades.TryGetValue(IDTuple, out trades);
+                    }
                     if (trades == null)
                     {
                         trades = new List<CurrencyTrade>();
@@ -107,11 +151,11 @@ namespace Eco.Plugins.DiscordLink.Events
             }
         }
 
-        public void ConvertServerLogEvent(string logEventText)
+        public void AccumulateLogEvent(string logEventText)
         {
             string strippedEventText = MessageUtils.StripTags(logEventText);
             Logger.LogLevel eventLevel = Logger.LogLevel.Silent;
-            string[] parts = strippedEventText.Split( ':', 2);
+            string[] parts = strippedEventText.Split(':', 2);
             if (parts.Length == 0)
             {
                 Logger.Warning($"Ignored non delimited log event: \"{strippedEventText}\"");
@@ -127,13 +171,15 @@ namespace Eco.Plugins.DiscordLink.Events
             else if (parts[0].ContainsCaseInsensitive("Debug"))
                 eventLevel = Logger.LogLevel.Debug;
 
-            FireEvent(DLEventType.ServerLogWritten, eventLevel, parts[1].Trim());
+            using (_accumulatedLogsLock.Lock())
+            {
+                _accumulatedLogs.Add(new Tuple<Logger.LogLevel, string>(eventLevel, parts[1].Trim()));
+            }
         }
 
         private void FireEvent(DLEventType evetType, params object[] data)
         {
-            if (OnEventFired != null)
-                OnEventFired.Invoke(this, new DLEventArgs(evetType, data));
+            OnEventConverted.Invoke(new DLEventArgs(evetType, data));
         }
     }
 }

@@ -1,11 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Eco.Plugins.DiscordLink.Events;
 using Eco.Gameplay.Economy;
+using Eco.Moose.Utils.Lookups;
 using Eco.Plugins.DiscordLink.Utilities;
 using Eco.Plugins.DiscordLink.Extensions;
-using System.Threading.Tasks;
 
 namespace Eco.Plugins.DiscordLink.Modules
 {
@@ -33,7 +34,7 @@ namespace Eco.Plugins.DiscordLink.Modules
         protected override void GetDisplayContent(DiscordTarget target, out List<Tuple<string, DiscordLinkEmbed>> tagAndContent)
         {
             tagAndContent = new List<Tuple<string, DiscordLinkEmbed>>();
-            IEnumerable<Currency> currencies = EcoUtils.Currencies;
+            IEnumerable<Currency> currencies = Lookups.Currencies;
             var currencyTradesMap = DLStorage.WorldData.CurrencyToTradeCountMap;
             if (!(target is CurrencyChannelLink currencyLink))
                 return;
@@ -66,9 +67,6 @@ namespace Eco.Plugins.DiscordLink.Modules
                 var currencyEnumerator = personalCurrencies.GetEnumerator();
                 for (int i = 0; i < currencyLink.MaxPersonalCount && currencyEnumerator.MoveNext(); ++i)
                 {
-                    if (currencyEnumerator.Current.Creator == DiscordLink.Obj.EcoUser)
-                        continue; // Ignore the bot currency
-
                     DiscordLinkEmbed currencyReport = MessageBuilder.Discord.GetCurrencyReport(currencyEnumerator.Current, currencyLink.MaxTopCurrencyHolderCount, useBackingInfo: true, useTradeCount: true);
                     if (currencyReport != null)
                         tagAndContent.Add(new Tuple<string, DiscordLinkEmbed>($"{BaseTag} [{currencyEnumerator.Current.Id}]", currencyReport));

@@ -7,22 +7,24 @@
     <RepositoryUrl>https://github.com/Eco-DiscordLink/EcoDiscordPlugin</RepositoryUrl>
     <RepositoryType>Git</RepositoryType>
     <PackageTags>Eco Discord</PackageTags>
+    <Authors>MonzUn, R3sist3nt, Spoffy</Authors>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <Version>3.2.0</Version>
+    <OutputType>Library</OutputType>
+    <RootNamespace>Eco.Plugins.DiscordLink</RootNamespace>
+    <Version>3.4.0</Version>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
-    <Optimize>false</Optimize>
+    <Optimize>False</Optimize>
     <NoWarn>1701;1702;1998</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
-    <Optimize>false</Optimize>
+    <Optimize>False</Optimize>
     <NoWarn>1701;1702</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="ElixrMods.Framework" Version="3.4.0-rc" />
     <PackageReference Include="ConcurrentHashSet" Version="1.3.0" />
     <PackageReference Include="NetFabric.Hyperlinq.Abstractions" Version="1.3.0" />
     <PackageReference Include="Nito.AsyncEx.Coordination" Version="5.1.2" />
@@ -30,60 +32,60 @@
 
   <!-- Use project references if the projects are installed and package references otherwise -->
   <Choose>
-    <When Condition="Exists('..\..\DSharpPlus\DSharpPlus\DSharpPlus.csproj') AND Exists('..\..\DSharpPlus\DSharpPlus.CommandsNext\DSharpPlus.CommandsNext.csproj')">
+    <When Condition="Exists('..\..\DSharpPlus\DSharpPlus\DSharpPlus.csproj') AND Exists('..\..\DSharpPlus\DSharpPlus.SlashCommands\DSharpPlus.SlashCommands.csproj')">
       <ItemGroup>
         <ProjectReference Include="..\..\DSharpPlus\DSharpPlus\DSharpPlus.csproj" />
-        <ProjectReference Include="..\..\DSharpPlus\DSharpPlus.CommandsNext\DSharpPlus.CommandsNext.csproj" />
+        <ProjectReference Include="..\..\DSharpPlus\DSharpPlus.SlashCommands\DSharpPlus.SlashCommands.csproj" />
       </ItemGroup>
     </When>
     <Otherwise>
       <ItemGroup>
-        <PackageReference Include="DSharpPlus" Version="4.3.0" />
-        <PackageReference Include="DSharpPlus.CommandsNext" Version="4.3.0" />
+        <PackageReference Include="DSharpPlus" Version="4.4.6" />
+        <PackageReference Include="DSharpPlus.SlashCommands" Version="4.4.6" />
       </ItemGroup>
     </Otherwise>
   </Choose>
   
   <ItemGroup>
-
-    <!-- Use locally built Eco dlls if available and dependency dir references otherwise -->
+    <!-- Use dependency dir references if available and locally built Eco dlls otherwise -->
+    <Reference Include="MightyMooseCore">
+      <HintPath Condition="Exists('..\Dependencies\MightyMooseCore.dll')">..\Dependencies\MightyMooseCore.dll</HintPath>
+      <HintPath Condition="Exists('..\..\MightyMooseCore\MightyMooseCore\bin\Release\net7.0\MightyMooseCore.dll')">..\..\MightyMooseCore\MightyMooseCore\bin\Release\net7.0\MightyMooseCore.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
     <Reference Include="Eco.Core">
       <HintPath Condition="Exists('..\Dependencies\Eco.Core.dll')">..\Dependencies\Eco.Core.dll</HintPath>
-      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Core\bin\Release\net6.0\Eco.Core.dll')">..\..\Eco\Server\Eco.Core\bin\Release\net6.0\Eco.Core.dll</HintPath>
+      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Core\bin\Release\net7.0\Eco.Core.dll')">..\..\Eco\Server\Eco.Core\bin\Release\net7.0\Eco.Core.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Eco.Gameplay">
       <HintPath Condition="Exists('..\Dependencies\Eco.Gameplay.dll')">..\Dependencies\Eco.Gameplay.dll</HintPath>
-      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Gameplay\bin\Release\net6.0-windows\Eco.Gameplay.dll')">..\..\Eco\Server\Eco.Gameplay\bin\Release\net6.0-windows\Eco.Gameplay.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="Eco.ModKit">
-      <HintPath Condition="Exists('..\Dependencies\Eco.ModKit.dll')">..\Dependencies\Eco.ModKit.dll</HintPath>
-      <HintPath Condition="Exists('..\..\Eco\Server\Eco.ModKit\bin\Release\net6.0-windows\Eco.ModKit.dll')">..\..\Eco\Server\Eco.ModKit\bin\Release\net6.0-windows\Eco.ModKit.dll</HintPath>
+      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Gameplay\bin\Release\net7.0-windows\Eco.Gameplay.dll')">..\..\Eco\Server\Eco.Gameplay\bin\Release\net7.0-windows\Eco.Gameplay.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Eco.Plugins">
       <HintPath Condition="Exists('..\Dependencies\Eco.Plugins.dll')">..\Dependencies\Eco.Plugins.dll</HintPath>
-      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Plugins\bin\Release\net6.0-windows\Eco.Plugins.dll')">..\..\Eco\Server\Eco.Plugins\bin\Release\net6.0-windows\Eco.Plugins.dll</HintPath>
+      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Plugins\bin\Release\net7.0-windows\Eco.Plugins.dll')">..\..\Eco\Server\Eco.Plugins\bin\Release\net7.0-windows\Eco.Plugins.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Eco.Shared">
       <HintPath Condition="Exists('..\Dependencies\Eco.Shared.dll')">..\Dependencies\Eco.Shared.dll</HintPath>
-      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Shared\bin\Release\net6.0\Eco.Shared.dll')">..\..\Eco\Server\Eco.Shared\bin\Release\net6.0\Eco.Shared.dll</HintPath>
+      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Shared\bin\Release\net7.0\Eco.Shared.dll')">..\..\Eco\Server\Eco.Shared\bin\Release\net7.0\Eco.Shared.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Eco.Simulation">
       <HintPath Condition="Exists('..\Dependencies\Eco.Simulation.dll')">..\Dependencies\Eco.Simulation.dll</HintPath>
-      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Simulation\bin\Release\net6.0-windows\Eco.Simulation.dll')">..\..\Eco\Server\Eco.Simulation\bin\Release\net6.0-windows\Eco.Simulation.dll</HintPath>
+      <HintPath Condition="Exists('..\..\Eco\Server\Eco.Simulation\bin\Release\net7.0-windows\Eco.Simulation.dll')">..\..\Eco\Server\Eco.Simulation\bin\Release\net7.0-windows\Eco.Simulation.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Eco.WorldGenerator">
       <HintPath Condition="Exists('..\Dependencies\Eco.WorldGenerator.dll')">..\Dependencies\Eco.WorldGenerator.dll</HintPath>
-      <HintPath Condition="Exists('..\..\Eco\Server\Eco.WorldGenerator\bin\Release\net6.0-windows\Eco.WorldGenerator.dll')">..\..\Eco\Server\Eco.WorldGenerator\bin\Release\net6.0-windows\Eco.WorldGenerator.dll</HintPath>
+      <HintPath Condition="Exists('..\..\Eco\Server\Eco.WorldGenerator\bin\Release\net7.0-windows\Eco.WorldGenerator.dll')">..\..\Eco\Server\Eco.WorldGenerator\bin\Release\net7.0-windows\Eco.WorldGenerator.dll</HintPath>
+      <Private>false</Private>
     </Reference>
   </ItemGroup>
   
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
-    <Exec Command="if exist $(SolutionDir)..\Eco\ (set ServerPath=&quot;$(SolutionDir)..\Eco\Server\&quot;) else (set ServerPath=&quot;$(SolutionDir)..\EcoServer\&quot;)&#xD;&#xA;xcopy /Y &quot;$(OutDir)\Eco.EM.Framework.dll&quot; &quot;%25ServerPath%25Mods\Elixr Mods\&quot;&#xD;&#xA;for /f &quot;tokens=*&quot; %25%25i in ($(SolutionDir)DLLCopyList.txt) DO (xcopy /Y &quot;$(OutDir)%25%25i&quot; &quot;%25ServerPath%25Mods\DiscordLink\&quot;)&#xD;&#xA;xcopy /Y &quot;$(OutDir)\DiscordLink.pdb&quot; &quot;%25ServerPath%25&quot;" />
+    <Exec Command="if exist $(SolutionDir)..\Eco\ (set ServerPath=&quot;$(SolutionDir)..\Eco\Server\&quot;) else (set ServerPath=&quot;$(SolutionDir)..\EcoServer\&quot;)&#xD;&#xA;xcopy /Y &quot;$(OutDir)MightyMooseCore.dll&quot; &quot;%25ServerPath%25Mods\MightyMoose\&quot;&#xD;&#xA;for /f &quot;tokens=*&quot; %25%25i in ($(SolutionDir)DLLCopyList.txt) DO (xcopy /Y &quot;$(OutDir)%25%25i&quot; &quot;%25ServerPath%25Mods\DiscordLink\&quot;)&#xD;&#xA;xcopy /Y &quot;$(OutDir)DiscordLink.pdb&quot; &quot;%25ServerPath%25&quot;" />
   </Target>
 </Project>

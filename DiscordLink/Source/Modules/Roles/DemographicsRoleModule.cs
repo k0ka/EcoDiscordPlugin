@@ -1,13 +1,14 @@
-﻿using DSharpPlus.Entities;
+﻿using DSharpPlus;
+using DSharpPlus.Entities;
 using Eco.Plugins.DiscordLink.Events;
-using System.Linq;
-using System.Threading.Tasks;
 using Eco.Plugins.DiscordLink.Extensions;
 using Eco.Gameplay.GameActions;
 using Eco.Gameplay.Civics.Demographics;
-using Eco.Plugins.DiscordLink.Utilities;
 using Eco.Shared.Utils;
-using DSharpPlus;
+using Eco.Moose.Tools.Logger;
+using Eco.Moose.Utils.Lookups;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Eco.Plugins.DiscordLink.Modules
 {
@@ -27,7 +28,7 @@ namespace Eco.Plugins.DiscordLink.Modules
 
         protected override async Task UpdateInternal(DiscordLink plugin, DLEventType trigger, params object[] data)
         {
-            DLDiscordClient client = DiscordLink.Obj.Client;
+            DiscordClient client = DiscordLink.Obj.Client;
             if (!client.BotHasPermission(Permissions.ManageRoles))
                 return;
 
@@ -40,7 +41,7 @@ namespace Eco.Plugins.DiscordLink.Modules
                 foreach (DiscordMember member in await client.GetGuildMembersAsync())
                 {
                     LinkedUser linkedUser = UserLinkManager.LinkedUserByDiscordUser(member);
-                    foreach (Demographic demographic in EcoUtils.ActiveDemographics)
+                    foreach (Demographic demographic in Lookups.ActiveDemographics)
                     {
                         string demographicName = GetDemographicRoleName(demographic);
                         if (linkedUser == null || !DLConfig.Data.UseDemographicRoles || !demographic.ContainsUser(linkedUser.EcoUser))
@@ -65,7 +66,13 @@ namespace Eco.Plugins.DiscordLink.Modules
                     return;
 
                 DiscordMember member = linkedUser.DiscordMember;
-                foreach (Demographic demographic in EcoUtils.ActiveDemographics)
+                if (member == null)
+                {
+                    Logger.Error($"Failed to handle account link role change for Eco user \"{linkedUser.EcoUser.Name}\". Linked Discord member could not be fetched.");
+                    return;
+                }
+
+                foreach (Demographic demographic in Lookups.ActiveDemographics)
                 {
                     string demographicName = GetDemographicRoleName(demographic);
                     if (trigger == DLEventType.AccountLinkRemoved || !DLConfig.Data.UseDemographicRoles || !demographic.ContainsUser(linkedUser.EcoUser))
@@ -111,14 +118,14 @@ namespace Eco.Plugins.DiscordLink.Modules
 
         public static string GetDemographicRoleName(Demographic demographic)
         {
-            DemographicRoleReplacement replacement = DLConfig.Data.DemographicReplacementRoles.FirstOrDefault(s  => !string.IsNullOrEmpty(s.DemographicName)
+            DemographicRoleReplacement replacement = DLConfig.Data.DemographicReplacementRoles.FirstOrDefault(s => !string.IsNullOrEmpty(s.DemographicName)
                 && !string.IsNullOrEmpty(s.RoleName) && s.DemographicName.EqualsCaseInsensitive(demographic.Name));
             return replacement != null
                 ? replacement.RoleName
                 : demographic.Name;
         }
 
-        private async Task AddDemographicRole(DLDiscordClient client, DiscordMember member, string demographicName)
+        private async Task AddDemographicRole(DiscordClient client, DiscordMember member, string demographicName)
         {
             await client.AddRoleAsync(member, new DiscordLinkRole(demographicName, null, DemographicColor, false, true, $"User is in the {demographicName} demographic"));
         }

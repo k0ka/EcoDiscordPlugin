@@ -1,13 +1,14 @@
-﻿using DSharpPlus.Entities;
+﻿using DSharpPlus;
+using DSharpPlus.Entities;
 using Eco.Plugins.DiscordLink.Events;
-using System.Linq;
-using System.Threading.Tasks;
+using Eco.Moose.Utils.Extensions;
+using Eco.Moose.Utils.Lookups;
 using Eco.Plugins.DiscordLink.Extensions;
 using Eco.Gameplay.GameActions;
-using Eco.Plugins.DiscordLink.Utilities;
 using Eco.Gameplay.Skills;
-using DSharpPlus;
 using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace Eco.Plugins.DiscordLink.Modules
 {
@@ -29,7 +30,7 @@ namespace Eco.Plugins.DiscordLink.Modules
 
         protected override async Task UpdateInternal(DiscordLink plugin, DLEventType trigger, params object[] data)
         {
-            DLDiscordClient client = DiscordLink.Obj.Client;
+            DiscordClient client = DiscordLink.Obj.Client;
             if (!client.BotHasPermission(Permissions.ManageRoles))
                 return;
 
@@ -42,7 +43,7 @@ namespace Eco.Plugins.DiscordLink.Modules
                 foreach (DiscordMember member in await client.GetGuildMembersAsync())
                 {
                     LinkedUser linkedUser = UserLinkManager.LinkedUserByDiscordUser(member);
-                    foreach (Skill specialty in EcoUtils.Specialties)
+                    foreach (Skill specialty in Lookups.Specialties)
                     {
                         if (IgnoredSpecialtyNames.Contains(specialty.Name))
                             continue;
@@ -69,7 +70,7 @@ namespace Eco.Plugins.DiscordLink.Modules
                     return;
 
                 DiscordMember member = linkedUser.DiscordMember;
-                foreach (Skill specialty in EcoUtils.Specialties)
+                foreach (Skill specialty in Lookups.Specialties)
                 {
                     if (IgnoredSpecialtyNames.Contains(specialty.Name))
                         continue;
@@ -112,7 +113,7 @@ namespace Eco.Plugins.DiscordLink.Modules
             }
         }
 
-        private async Task AddSpecialtyRole(DLDiscordClient client, DiscordMember member, string specialtyName)
+        private async Task AddSpecialtyRole(DiscordClient client, DiscordMember member, string specialtyName)
         {
             await client.AddRoleAsync(member, new DiscordLinkRole(specialtyName, null, SpecialtyColor, false, true, $"User has the {specialtyName} specialty"));
         }

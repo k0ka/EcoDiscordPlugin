@@ -31,7 +31,7 @@ namespace Eco.Plugins.DiscordLink.Modules
 
         protected override async Task UpdateInternal(DiscordLink plugin, DLEventType trigger, params object[] data)
         {
-            DLDiscordClient client = DiscordLink.Obj.Client;
+            DiscordClient client = DiscordLink.Obj.Client;
             if (!client.BotHasPermission(Permissions.ManageRoles))
                 return;
 
@@ -58,7 +58,7 @@ namespace Eco.Plugins.DiscordLink.Modules
                             await client.RemoveRoleAsync(member, _linkedAccountRole);
                         }
                     }
-                    else if (linkedUser.Verified && !member.HasRole(_linkedAccountRole))
+                    else if (linkedUser.Valid && !member.HasRole(_linkedAccountRole))
                     {
                         ++_opsCount;
                         await client.AddRoleAsync(member, _linkedAccountRole);

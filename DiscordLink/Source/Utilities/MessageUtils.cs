@@ -1,13 +1,12 @@
 ﻿using DSharpPlus.Entities;
 using Eco.Core.Utils;
+using Eco.Moose.Tools.Logger;
 using Eco.Plugins.DiscordLink.Extensions;
-using Eco.Plugins.Networking;
 using Eco.Shared.Utils;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 namespace Eco.Plugins.DiscordLink.Utilities
 {
@@ -18,6 +17,9 @@ namespace Eco.Plugins.DiscordLink.Utilities
 
         // Display tag matching regex: Match the [] header and the [] tag and capture them both. Will capture only the header if no tag exists.
         public static readonly Regex DisplayTagRegex = new Regex("(\\[[^\\]]+\\])(?:\\s*\\[([^\\]]+)\\])*");
+
+        // Discord custom emote regex: Match all characters starting with <: and ending in > while containing an additional : in between. Capture the content between the : pair.
+        public static readonly Regex DiscordCustomEmoteRegex = new Regex("<:(.*?):.*?>");
 
         // Eco tag matching regex: Match all characters that are used to create HTML style tags
         private static readonly Regex HTMLTagRegex = new Regex("<[^>]*>");
@@ -67,11 +69,6 @@ namespace Eco.Plugins.DiscordLink.Utilities
             }
             result.Add(builder);
             return result;
-        }
-
-        public static string GetCommandTokenForContext(SharedCommands.CommandInterface context)
-        {
-            return context == SharedCommands.CommandInterface.Eco ? "/" : DLConfig.Data.DiscordCommandPrefix;
         }
 
         public static List<DiscordEmbed> BuildDiscordEmbeds(DiscordLinkEmbed fullEmbed)
@@ -190,7 +187,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 }
                 catch (UriFormatException e)
                 {
-                    Logger.Debug("Failed to include thumbnail in Server Info embed. Error: " + e);
+                    Logger.Exception("Failed to include thumbnail in Server Info embed", e);
                 }
             }
 
@@ -308,54 +305,13 @@ namespace Eco.Plugins.DiscordLink.Utilities
 
         #region Discord -> Eco
 
-        public static async Task<string> FormatMessageForEco(DiscordMessage message, string ecoChannel)
-        {
-            DiscordMember author = await message.GetChannel().Guild.GetMemberAsync(message.Author.Id);
-            string nametag = author != null
-                ? Text.Bold(Text.Color(DLConstants.ECO_NAME_TAG_COLOR, author.DisplayName))
-                : message.Author.Username;
-            return $"#{ecoChannel} {nametag}: {GetReadableContent(message)}";
-        }
-
-        public static string GetReadableContent(DiscordMessage message)
-        {
-            var content = message.Content;
-            foreach (var user in message.MentionedUsers)
-            {
-                if (user == null) { continue; }
-                DiscordMember member = message.GetChannel().Guild.Members.FirstOrDefault(m => m.Value?.Id == user.Id).Value;
-                if (member == null) { continue; }
-                string name = $"@{member.DisplayName}";
-                content = content.Replace($"<@{user.Id}>", name).Replace($"<@!{user.Id}>", name);
-            }
-            foreach (var role in message.MentionedRoles)
-            {
-                if (role == null) continue;
-                content = content.Replace($"<@&{role.Id}>", $"@{role.Name}");
-            }
-            foreach (var channel in message.MentionedChannels)
-            {
-                if (channel == null) continue;
-                content = content.Replace($"<#{channel.Id}>", $"#{channel.Name}");
-            }
-
-            if (message.Attachments.Count > 0)
-            {
-                content += "\nAttachments:";
-                foreach (DiscordAttachment attachment in message.Attachments)
-                {
-                    content += $"\n{attachment.FileName}";
-                }
-            }
-
-            return content;
-        }
+        public static string FormatMessageForEcoChannel(string message, string ecoChannel) => $"#{ecoChannel} {message}";
 
         public static string FormatEmbedForEco(DiscordLinkEmbed embed)
         {
             string text = embed.AsText();
             text = text.Substring(text.IndexOf('\n') + 1);
-            text = text.Replace(DiscordLinkEmbed.INVISIBLE_EMBED_CHAR, null);
+            text = text.Replace(DLConstants.INVISIBLE_EMBED_CHAR, null);
             text = text.Replace("[", null);
             text = text.Replace("****", null);
             text = text.Replace("\r", null);

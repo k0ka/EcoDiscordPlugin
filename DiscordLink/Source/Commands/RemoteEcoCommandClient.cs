@@ -1,4 +1,4 @@
-﻿using DSharpPlus.CommandsNext;
+﻿using DSharpPlus.SlashCommands;
 using Eco.Gameplay.Players;
 using Eco.Gameplay.Systems.Chat;
 using Eco.Gameplay.Systems.Messaging.Chat.Commands;
@@ -12,34 +12,36 @@ namespace Eco.Plugins.DiscordLink
 {
     public class RemoteEcoCommandClient : IChatClient
     {
-        readonly CommandContext CmdContext;
+        readonly InteractionContext InteractionContext;
         readonly User EcoUser;
 
-        public RemoteEcoCommandClient(CommandContext ctx)
+        public RemoteEcoCommandClient(InteractionContext ctx)
         {
-            CmdContext = ctx;
-            LinkedUser userLink = UserLinkManager.LinkedUserByDiscordUser(CmdContext.User);
+            InteractionContext = ctx;
+            LinkedUser userLink = UserLinkManager.LinkedUserByDiscordUser(InteractionContext.User);
             EcoUser = userLink != null ? userLink.EcoUser : null;
         }
 
-        public string Name => EcoUser != null ? EcoUser.Name : CmdContext.User.Username;
-
-        public LocString MarkedUpName => Localizer.NotLocalizedStr(EcoUser != null ? EcoUser.MarkedUpName : CmdContext.User.Username);
-
+        public string Name => EcoUser != null ? EcoUser.Name : InteractionContext.User.Username;
+        public LocString MarkedUpName => Localizer.NotLocalizedStr(EcoUser != null ? EcoUser.MarkedUpName : InteractionContext.User.Username);
         public string ImplementationName => "DiscordLink Eco Command Client";
+
+        public string ReportUserId => EcoUser != null ? EcoUser.SlgId : InteractionContext.User.Id.ToString();
+        public string ReportUsername => Name;
+        public string ReportIpAddress => EcoUser != null ? EcoUser.ReportIpAddress : null;
 
         public ChatAuthorizationLevel GetChatAuthLevel()
         {
-            if(EcoUser != null)
+            if (EcoUser != null)
             {
                 if (EcoUser.IsDev)
                     return ChatAuthorizationLevel.Developer;
                 else if (EcoUser.IsAdmin)
                     return ChatAuthorizationLevel.Admin;
             }
-            else if(DiscordLink.Obj.Client.MemberIsAdmin(CmdContext.Member))
+            else if (DiscordLink.Obj.Client.MemberIsAdmin(InteractionContext.Member))
             {
-                return ChatAuthorizationLevel.Admin;   
+                return ChatAuthorizationLevel.Admin;
             }
 
             return ChatAuthorizationLevel.User;
@@ -68,9 +70,9 @@ namespace Eco.Plugins.DiscordLink
         private async Task SendMessage(string msg, NotificationStyle style)
         {
             if (style == NotificationStyle.Error)
-                await DiscordCommands.ReportCommandError(CmdContext, MessageUtils.StripTags(msg));
+                await DiscordCommands.ReportCommandError(InteractionContext, MessageUtils.StripTags(msg));
             else
-                await DiscordCommands.ReportCommandInfo(CmdContext, MessageUtils.StripTags(msg));
+                await DiscordCommands.ReportCommandInfo(InteractionContext, MessageUtils.StripTags(msg));
         }
     }
 }

@@ -1,12 +1,15 @@
 ﻿using DSharpPlus.Entities;
-using Eco.Gameplay.Systems.Chat;
+using Eco.Moose.Tools.Logger;
+using Eco.Gameplay.Players;
 using Eco.Plugins.DiscordLink.Events;
 using Eco.Plugins.DiscordLink.Extensions;
 using Eco.Plugins.DiscordLink.Utilities;
+using Eco.Shared.Utils;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Eco.Gameplay.GameActions;
+using Color = Eco.Shared.Utils.Color;
+using Eco.Moose.Utils.Message;
 
 namespace Eco.Plugins.DiscordLink.Modules
 {
@@ -41,61 +44,92 @@ namespace Eco.Plugins.DiscordLink.Modules
             foreach (ChatChannelLink chatLink in chatLinks
                 .Where(link => link.Direction == ChatSyncDirection.EcoToDiscord || link.Direction == ChatSyncDirection.Duplex))
             {
-                await ForwardMessageToEcoChannel(plugin, message, chatLink.EcoChannel);
+                await ForwardMessageToEcoChannel(message, chatLink.EcoChannel);
             }
         }
 
-        private async Task ForwardMessageToEcoChannel(DiscordLink plugin, DiscordMessage message, string ecoChannel)
+        private async Task ForwardMessageToEcoChannel(DiscordMessage discordMessage, string ecoChannel)
         {
-            Logger.DebugVerbose($"Sending Discord message to Eco channel: {ecoChannel}");
-            var ecoMessage = await MessageUtils.FormatMessageForEco(message, ecoChannel);
-            EcoUtils.SendChatRaw(ecoMessage);
-            
-            // forward message to other servers
-            var forwardMessage = MessageUtils.GetReadableContent(message);
-            IEnumerable<ChatChannelLink> chatLinks = DLConfig.ChatLinksForEcoChannel(ecoChannel);
-            foreach (var chatLink in chatLinks)
+            Logger.Trace($"Sending Discord message to Eco channel: {ecoChannel}");
+            DiscordMember author = await discordMessage.GetChannel().Guild.GetMemberAsync(discordMessage.Author.Id);
+
+            User sender = null;
+            LinkedUser linkedUser = UserLinkManager.LinkedUserByDiscordUser(author);
+            if (linkedUser != null)
+                sender = linkedUser.EcoUser;
+
+            string messageContent = GetReadableContent(discordMessage);
+            if (sender == null)
             {
-                if (chatLink.Guild.Id == message.Channel.Guild.Id)
-                {
-                    continue;
-                }
-                
-                ForwardMessageToDiscordChannel(
-                    forwardMessage, 
-                    $"[{GetGuildName(message.Channel.Guild)}] {message.Author.Username}",
-                    chatLink.Channel,
-                    chatLink.UseTimestamp,
-                    chatLink.HereAndEveryoneMentionPermission,
-                    chatLink.MentionPermissions
-                );
+                DiscordMember memberAuthor = await discordMessage.Author.LookupMember();
+                messageContent = $"{Text.Color(Color.LightBlue, memberAuthor.DisplayName)} {DLConstants.ECO_DISCORDLINK_ICON} {messageContent}";
             }
-            
+            else
+            {
+                messageContent = $"{DLConstants.ECO_DISCORDLINK_ICON} {messageContent}";
+            }
+
+            Message.SendChatRaw(sender, MessageUtils.FormatMessageForEcoChannel(messageContent, ecoChannel));
             ++_opsCount;
         }
 
-        private string GetGuildName(DiscordGuild guild)
+        private string GetReadableContent(DiscordMessage message)
         {
-            switch (guild.Id)
+            // Substitute Discord standard emojis
+            string content = DLConstants.DISCORD_EMOJI_SUBSTITUTION_MAP.Aggregate(message.Content, (current, emojiMapping) => current.Replace(emojiMapping.Key, $"<ecoicon name=\"{emojiMapping.Value}\">"));
+
+            // Substitute custom emojis
+            content = MessageUtils.DiscordCustomEmoteRegex.Replace(content, capture =>
             {
-                case 662813412413276191:
-                    return "BCG";
-                case 433039858794233858:
-                    return "Comfy";
-                case 643910879200411668:
-                    return "Test";
-                default:
-                    return guild.Name;
+                string group1 = capture.Groups[1].Value;
+                EmoteIconSubstitution sub = DLConfig.Data.EmoteIconSubstitutions.FirstOrDefault(sub => sub.DiscordEmoteKey.EqualsCaseInsensitive(group1));
+                if (sub != null)
+                {
+                    return $"<ecoicon name=\"{sub.EcoIconKey}\">";
+                }
+                else
+                {
+                    return $":{group1}:";
+                }
+            });
+
+            foreach (var user in message.MentionedUsers)
+            {
+                if (user == null)
+                    continue;
+
+                DiscordMember member = message.GetChannel().Guild.Members.FirstOrDefault(m => m.Value?.Id == user.Id).Value;
+                if (member == null)
+                    continue;
+
+                string name = $"@{member.DisplayName}";
+                content = content.Replace($"<@{user.Id}>", name).Replace($"<@!{user.Id}>", name);
             }
+            foreach (var role in message.MentionedRoles)
+            {
+                if (role == null)
+                    continue;
+
+                content = content.Replace($"<@&{role.Id}>", $"@{role.Name}");
+            }
+            foreach (var channel in message.MentionedChannels)
+            {
+                if (channel == null)
+                    continue;
+
+                content = content.Replace($"<#{channel.Id}>", $"#{channel.Name}");
+            }
+
+            if (message.Attachments.Count > 0)
+            {
+                content += "\nAttachments:";
+                foreach (DiscordAttachment attachment in message.Attachments)
+                {
+                    content += $"\n{attachment.FileName}";
+                }
+            }
+
+            return content;
         }
-        
-        private void ForwardMessageToDiscordChannel(string message, string citizenName, DiscordChannel channel, bool useTimestamp, GlobalMentionPermission globalMentionPermission, ChatLinkMentionPermissions chatlinkPermissions)
-        {
-            Logger.DebugVerbose($"Forwarding Discord message to Discord channel {channel.Name}");
-
-            bool allowGlobalMention = globalMentionPermission == GlobalMentionPermission.AnyUser;
-
-            _ = DiscordLink.Obj.Client.SendMessageAsync(channel, MessageUtils.FormatMessageForDiscord(message, channel, citizenName, useTimestamp, allowGlobalMention, chatlinkPermissions));
-        }        
     }
 }

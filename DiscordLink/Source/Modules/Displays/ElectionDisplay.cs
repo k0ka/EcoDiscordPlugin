@@ -1,7 +1,7 @@
 ﻿using DSharpPlus.Entities;
 using Eco.Core.Utils;
+using Eco.Moose.Utils.Lookups;
 using Eco.Gameplay.Civics.Elections;
-using Eco.Gameplay.Players;
 using Eco.Plugins.DiscordLink.Events;
 using Eco.Plugins.DiscordLink.Extensions;
 using Eco.Plugins.DiscordLink.Utilities;
@@ -9,6 +9,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using static Eco.Plugins.DiscordLink.Enums;
+using Eco.Moose.Tools.Logger;
 
 namespace Eco.Plugins.DiscordLink.Modules
 {
@@ -38,7 +40,7 @@ namespace Eco.Plugins.DiscordLink.Modules
         {
             tagAndContent = new List<Tuple<string, DiscordLinkEmbed>>();
 
-            foreach (Election election in EcoUtils.ActiveElections)
+            foreach (Election election in Lookups.ActiveElections)
             {
                 string tag = $"{BaseTag} [{election.Id}]";
                 DiscordLinkEmbed report = MessageBuilder.Discord.GetElectionReport(election);
@@ -54,12 +56,12 @@ namespace Eco.Plugins.DiscordLink.Modules
                 await CreateVoteReactions(message);
         }
 
-        protected async override Task HandleReactionChange(DiscordUser user, DiscordMessage message, DiscordEmoji emoji, Utilities.Utils.DiscordReactionChange changeType)
+        protected async override Task HandleReactionChange(DiscordUser user, DiscordMessage message, DiscordEmoji emoji, DiscordReactionChange changeType)
         {
             if (emoji != DLConstants.ACCEPT_EMOJI && emoji != DLConstants.DENY_EMOJI)
                 return;
 
-            if (changeType != Utilities.Utils.DiscordReactionChange.Added)
+            if (changeType != DiscordReactionChange.Added)
                 return;
 
             Election election = GetElectionFromMessage(message);
@@ -72,7 +74,7 @@ namespace Eco.Plugins.DiscordLink.Modules
                 return;
 
             string choice = emoji == DLConstants.ACCEPT_EMOJI ? "Yes" : "No";
-            Result result = election.Vote(new RunoffVote(linkedUser.EcoUser, election.GetChoiceByName(choice).ID));
+            Result result = election.Vote(new UserRunoffVote(linkedUser.EcoUser, election.GetChoiceByName(choice).ID));
             if (result.Failed)
                 Logger.Debug($"Failed to cast rection vote of type \"{choice}\" for Discord user \"{user.Username}\" in election {election.Id}. Message: {result.Message}");
 
@@ -98,7 +100,7 @@ namespace Eco.Plugins.DiscordLink.Modules
                 if (!int.TryParse(tag, out int electionID))
                     continue;
 
-                Election foundElection = EcoUtils.ActiveElections.FirstOrDefault(e => e.Id == electionID);
+                Election foundElection = Lookups.ActiveElections.FirstOrDefault(e => e.Id == electionID);
                 if (foundElection != null)
                 {
                     election = foundElection;

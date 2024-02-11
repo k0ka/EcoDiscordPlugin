@@ -1,6 +1,7 @@
-﻿using DSharpPlus.CommandsNext.Attributes;
-using DSharpPlus.Entities;
+﻿using DSharpPlus.Entities;
 using Eco.Core.Plugins;
+using Eco.Moose.Tools.Logger;
+using Eco.Moose.Utils.Message;
 using Eco.Plugins.DiscordLink.Extensions;
 using Eco.Plugins.DiscordLink.Utilities;
 using Eco.Plugins.Networking;
@@ -12,8 +13,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
-using Description = System.ComponentModel.DescriptionAttribute;
-using CategoryAttribute = System.ComponentModel.CategoryAttribute;
+using static Eco.Plugins.DiscordLink.Enums;
 
 namespace Eco.Plugins.DiscordLink
 {
@@ -26,9 +26,8 @@ namespace Eco.Plugins.DiscordLink
             public static bool UseVerboseDisplay = false;
             public static readonly string[] AdminRoles = { "Admin", "Eco Admins", "Administrator", "Moderator" };
             public const string DiscordCommandPrefix = "?";
-            public const string EcoCommandOutputChannel = "General";
             public const string InviteMessage = "Join us on Discord!\\n" + DLConstants.INVITE_COMMAND_TOKEN;
-            public const string EcoBotName = "DiscordLink";
+            public const ChatSyncMode ChatSynchronizationMode = ChatSyncMode.OptOut;
             public const int MaxMintedCurrencies = 1;
             public const int MaxPersonalCurrencies = 3;
             public const int MaxTopCurrencyHolderCount = 3;
@@ -39,6 +38,7 @@ namespace Eco.Plugins.DiscordLink
             public const bool UseDemographicRoles = true;
             public const bool UseSpecialtyRoles = true;
             public static readonly DemographicRoleReplacement[] DemographicRoleReplacements = { new DemographicRoleReplacement("everyone", "Eco Everyone"), new DemographicRoleReplacement("admins", "Eco Admins") };
+            public static readonly EmoteIconSubstitution[] EmoteSubstitutions = { new EmoteIconSubstitution("DiscordLink", "DiscordLinkLogo") };
         }
 
         public static readonly DLConfig Instance = new DLConfig();
@@ -52,42 +52,15 @@ namespace Eco.Plugins.DiscordLink
                 : Instance._allChannelLinks;
         }
 
-        [Obsolete("chat links should support multiple channels, too")]
-        public static ChannelLink ChannelLinkForDiscordChannel(string discordChannelName) =>
-            GetChannelLinks().FirstOrDefault(link
-                => link.IsValid()
-                && link.DiscordChannel.EqualsCaseInsensitive(discordChannelName));
-
-        public static IEnumerable<ChannelLink> ChannelLinksForDiscordChannel(string discordChannelName) =>
-            GetChannelLinks().Where(link
-                => link.IsValid()
-                && link.DiscordChannel.EqualsCaseInsensitive(discordChannelName));
-
-        [Obsolete("chat links should support multiple channels, too")]
-        public static ChatChannelLink ChatLinkForEcoChannel(string ecoChannelName) => Data.ChatChannelLinks.FirstOrDefault(link
-                => link.IsValid()
-                && link.EcoChannel.EqualsCaseInsensitive(ecoChannelName));
-
-        public static IEnumerable<ChatChannelLink> ChatLinksForEcoChannel(string ecoChannelName) => 
+        public static IEnumerable<ChatChannelLink> ChatLinksForEcoChannel(string ecoChannelName) =>
             Data.ChatChannelLinks.Where(link
                 => link.IsValid()
                 && link.EcoChannel.EqualsCaseInsensitive(ecoChannelName));
-
-        [Obsolete("chat links should support multiple channels, too")]
-        public static ChatChannelLink ChatLinkForDiscordChannel(DiscordChannel channel) =>
-            Data.ChatChannelLinks.FirstOrDefault(link
-                => link.IsValid()
-                && (link.DiscordChannel.EqualsCaseInsensitive(channel.Name) || link.DiscordChannel.EqualsCaseInsensitive(channel.Id.ToString())));
 
         public static IEnumerable<ChatChannelLink> ChatLinksForDiscordChannel(DiscordChannel channel) =>
             Data.ChatChannelLinks.Where(link
                 => link.IsValid()
-                && (
-                    link.DiscordChannel.EqualsCaseInsensitive(channel.Name)
-                    || link.DiscordChannel.EqualsCaseInsensitive(channel.Id.ToString())
-                    )
-                && (channel.Guild.Id == link.Guild.Id)
-                );
+                && link.DiscordChannelId == channel.Id);
 
         public delegate Task OnConfigChangedDelegate(object sender, EventArgs e);
         public event OnConfigChangedDelegate OnConfigChanged;
@@ -130,12 +103,12 @@ namespace Eco.Plugins.DiscordLink
             Data.DiscordCommandChannels.CollectionChanged += (obj, args) => { HandleCollectionChanged(args); };
         }
 
-        public void PostConnectionInitialize()
+        public void PostConnectionInit()
         {
             // Guild
             if (DiscordLink.Obj.Client.Guild == null)
             {
-                Logger.Error($"Failed to find Discord server with the name or ID \"{Data.DiscordServer}\"");
+                Logger.Error($"Failed to find a Discord server with the ID \"{Data.DiscordServerID}\"");
                 return;
             }
 
@@ -157,7 +130,8 @@ namespace Eco.Plugins.DiscordLink
             // Do not verify if change occurred as this function is going to be called again in that case
             // Do not verify the config in case critical data has been changed, as the client will be restarted and that will trigger verification
             bool tokenChanged = Data.BotToken != _prevConfig.BotToken;
-            bool guildChanged = Data.DiscordServer != _prevConfig.DiscordServer;
+            bool guildChanged = Data.DiscordServerID != _prevConfig.DiscordServerID;
+            bool logLevelChanged = Data.LogLevel != _prevConfig.LogLevel;
             bool correctionMade = !Save();
 
             BuildChanneLinkList();
@@ -167,43 +141,32 @@ namespace Eco.Plugins.DiscordLink
                 Logger.Info("Critical config data changed - Please restart the plugin for these changes to take effect");
             }
 
-            if (DiscordLink.Obj.Client.ConnectionStatus == DLDiscordClient.ConnectionState.Connected)
+            if(logLevelChanged)
+            {
+                Logger.SetConfiguredLogLevel(Data.LogLevel);
+            }
+
+            if (DiscordLink.Obj.Client.ConnectionStatus == DiscordClient.ConnectionState.Connected)
             {
                 BuildChanneLinkList();
                 VerifyLinks();
                 InitChatLinks();
             }
 
-            if (!correctionMade) // If a correction was made, this function will be called again
+            // If a correction was made, this function will be called again.
+            // If the guild becomes null, this check is unstable and will be performed on plugin restart anyway.
+            if (!correctionMade && !guildChanged)
             {
-                if (OnConfigChanged != null)
-                    await OnConfigChanged.Invoke(this, EventArgs.Empty);
+                if(OnConfigChanged != null)
+                {
+                    await OnConfigChanged?.Invoke(this, EventArgs.Empty);
+                }
             }
         }
 
         public bool Save() // Returns true if no correction was needed
         {
             bool correctionMade = false;
-
-            // Eco Bot Name
-            if (string.IsNullOrEmpty(Data.EcoBotName))
-            {
-                Data.EcoBotName = DefaultValues.EcoBotName;
-                correctionMade = true;
-            }
-
-            // Discord Command Prefix
-            if (Data.DiscordCommandPrefix != _prevConfig.DiscordCommandPrefix)
-            {
-                if (string.IsNullOrEmpty(Data.DiscordCommandPrefix))
-                {
-                    Data.DiscordCommandPrefix = DefaultValues.DiscordCommandPrefix;
-                    correctionMade = true;
-
-                    Logger.Info("Command prefix found empty - Resetting to default.");
-                }
-                Logger.Info("Command prefix changed - Restart required to take effect.");
-            }
 
             // Channel Links
             foreach (ChannelLink link in _allChannelLinks)
@@ -261,7 +224,7 @@ namespace Eco.Plugins.DiscordLink
             _verifiedChannelLinks.Clear();
             foreach (ChannelLink link in _allChannelLinks)
             {
-                if (link.Initailize())
+                if (link.Initialize())
                     _verifiedChannelLinks.Add(link);
             }
         }
@@ -271,7 +234,7 @@ namespace Eco.Plugins.DiscordLink
             foreach (ChatChannelLink chatLink in Data.ChatChannelLinks)
             {
                 if (chatLink.IsValid())
-                    EcoUtils.EnsureChatChannelExists(chatLink.EcoChannel);
+                    Message.EnsureChatChannelExists(chatLink.EcoChannel);
             }
         }
 
@@ -300,15 +263,14 @@ namespace Eco.Plugins.DiscordLink
         {
             return new DLConfigData
             {
-                DiscordServer = this.DiscordServer,
                 BotToken = this.BotToken,
-                EcoBotName = this.EcoBotName,
+                DiscordServerID = this.DiscordServerID,
                 MinEmbedSizeForFooter = this.MinEmbedSizeForFooter,
                 ServerName = this.ServerName,
                 ServerDescription = this.ServerDescription,
                 ServerLogo = this.ServerLogo,
                 ConnectionInfo = this.ConnectionInfo,
-                DiscordCommandPrefix = this.DiscordCommandPrefix,
+                ChatSyncMode = this.ChatSyncMode,
                 LogLevel = this.LogLevel,
                 MaxTradeWatcherDisplaysPerUser = this.MaxTradeWatcherDisplaysPerUser,
                 InviteMessage = this.InviteMessage,
@@ -330,23 +292,18 @@ namespace Eco.Plugins.DiscordLink
                 SnippetInputChannels = new ObservableCollection<ChannelLink>(this.SnippetInputChannels.Select(t => t.Clone()).Cast<ChannelLink>()),
                 DiscordCommandChannels = new ObservableCollection<ChannelLink>(this.DiscordCommandChannels.Select(t => t.Clone()).Cast<ChannelLink>()),
                 DemographicReplacementRoles = new ObservableCollection<DemographicRoleReplacement>(this.DemographicReplacementRoles.Select(t => t.Clone()).Cast<DemographicRoleReplacement>()),
+                EmoteIconSubstitutions = new ObservableCollection<EmoteIconSubstitution>(this.EmoteIconSubstitutions.Select(t => t.Clone()).Cast<EmoteIconSubstitution>()),
             };
         }
-
-        [Description("The name or ID if the Discord Server. This setting can be changed while the server is running but will require a plugin restart to take effect."), Category("Base Configuration - Discord")]
-        public string DiscordServer { get; set; } = string.Empty;
 
         [Description("The token provided by the Discord API to allow access to the Discord bot. This setting can be changed while the server is running but will require a plugin restart to take effect."), Category("Base Configuration - Discord")]
         public string BotToken { get; set; }
 
-        [Description("The name of the bot user in Eco. This setting can be changed while the server is running, but changes will only take effect after a world reset."), Category("Base Configuration - Discord")]
-        public string EcoBotName { get; set; } = DLConfig.DefaultValues.EcoBotName;
+        [Description("The ID if the Discord Server. This setting can be changed while the server is running but will require a plugin restart to take effect."), Category("Base Configuration - Discord")]
+        public ulong DiscordServerID { get; set; }
 
         [Description("The roles recognized as having admin permissions on Discord. This setting requires a plugin restart to take effect."), Category("Base Configuration - Discord")]
         public ObservableCollection<string> AdminRoles { get; set; } = new ObservableCollection<string>(DLConfig.DefaultValues.AdminRoles);
-
-        [Description("Determines for what sizes of embeds to show the footer containing meta information about posted embeds. All embeds of sizes bigger than the selected one will have footers as well. This setting can be changed while the server is running."), Category("Base Configuration - Discord")]
-        public DiscordLinkEmbed.EmbedSize MinEmbedSizeForFooter { get; set; } = DLConfig.DefaultValues.MinEmbedSizeForFooter;
 
         [Description("The name of the Eco server, overriding the name configured within Eco. This setting can be changed while the server is running."), Category("Base Configuration - Eco")]
         public string ServerName { get; set; }
@@ -358,69 +315,69 @@ namespace Eco.Plugins.DiscordLink
         public string ServerLogo { get; set; }
 
         [Description("The game server connection information to display to users. This setting can be changed while the server is running."), Category("Base Configuration - Eco")]
-        public string ConnectionInfo { get; set; } = $"<eco://connect/{NetworkManager.Config.ID.ToString()}>";
+        public string ConnectionInfo { get; set; } = $"Server ID: {NetworkManager.Config.ID.ToString()}";
 
-        [Description("The prefix to put before commands in order for the Discord bot to recognize them as such. This setting requires a plugin restart to take effect."), Category("Command Settings")]
-        public string DiscordCommandPrefix { get; set; } = DLConfig.DefaultValues.DiscordCommandPrefix;
+        [Description("Whether chat message should be synchroinized by default or not. This setting can be changed while the server is running."), Category("Base Configuration - Eco")]
+        public ChatSyncMode ChatSyncMode { get; set; } = DLConfig.DefaultValues.ChatSynchronizationMode;
 
-        [Description("Discord and Eco Channels to connect together for chat crossposting. This setting can be changed while the server is running."), Category("Feeds")]
+        [Description("Discord and Eco Channels to connect together for chat crossposting. This setting can be changed while the server is running."), Category("Modules - Feeds")]
         public ObservableCollection<ChatChannelLink> ChatChannelLinks { get; set; } = new ObservableCollection<ChatChannelLink>();
 
-        [Description("Discord Channels in which trade events will be posted. This setting can be changed while the server is running."), Category("Feeds")]
+        [Description("Discord Channels in which trade events will be posted. This setting can be changed while the server is running."), Category("Modules - Feeds")]
         public ObservableCollection<ChannelLink> TradeFeedChannels { get; set; } = new ObservableCollection<ChannelLink>();
 
-        [Description("Discord channels in which crafting events will be posted. This setting can be changed while the server is running."), Category("Feeds")]
+        [Description("Discord channels in which crafting events will be posted. This setting can be changed while the server is running."), Category("Modules - Feeds")]
         public ObservableCollection<ChannelLink> CraftingFeedChannels { get; set; } = new ObservableCollection<ChannelLink>();
 
-        [Description("Discord channels in which server status events will be posted. This setting can be changed while the server is running."), Category("Feeds")]
+        [Description("Discord channels in which server status events will be posted. This setting can be changed while the server is running."), Category("Modules - Feeds")]
         public ObservableCollection<ChannelLink> ServerStatusFeedChannels { get; set; } = new ObservableCollection<ChannelLink>();
 
-        [Description("Discord channels in which player status events will be posted. This setting can be changed while the server is running."), Category("Feeds")]
+        [Description("Discord channels in which player status events will be posted. This setting can be changed while the server is running."), Category("Modules - Feeds")]
         public ObservableCollection<ChannelLink> PlayerStatusFeedChannels { get; set; } = new ObservableCollection<ChannelLink>();
 
-        [Description("Discord channels in which election events will be posted. This setting can be changed while the server is running."), Category("Feeds")]
+        [Description("Discord channels in which election events will be posted. This setting can be changed while the server is running."), Category("Modules - Feeds")]
         public ObservableCollection<ChannelLink> ElectionFeedChannels { get; set; } = new ObservableCollection<ChannelLink>();
 
-        [Description("Discord channels in which server log entries will be posted. This setting can be changed while the server is running."), Category("Feeds")]
+        [Description("Discord channels in which server log entries will be posted. This setting can be changed while the server is running."), Category("Modules - Feeds")]
         public ObservableCollection<ServerLogFeedChannelLink> ServerLogFeedChannels { get; set; } = new ObservableCollection<ServerLogFeedChannelLink>();
 
-        [Description("Determines if users can use trade watcher feeds. This setting can be changed while the server is running."), Category("Feeds")]
+        [Description("Determines if users can use trade watcher feeds. This setting can be changed while the server is running."), Category("Modules - Feeds")]
         public bool UseTradeWatcherFeeds { get; set; } = DLConfig.DefaultValues.UseTradeWatcherFeeds;
 
-        [Description("Discord channels in which to keep the Server Info display. DiscordLink will post one server info message in these channel and keep it updated through edits. This setting can be changed while the server is running."), Category("Displays")]
+        [Description("Discord channels in which to keep the Server Info display. DiscordLink will post one server info message in these channel and keep it updated through edits. This setting can be changed while the server is running."), Category("Modules - Displays")]
         public ObservableCollection<ServerInfoChannel> ServerInfoDisplayChannels { get; set; } = new ObservableCollection<ServerInfoChannel>();
 
-        [Description("Discord channels in which to keep ongoing work parties. DiscordLink will post messages in these channel and keep them updated through edits. This setting can be changed while the server is running."), Category("Displays")]
+        [Description("Discord channels in which to keep ongoing work parties. DiscordLink will post messages in these channel and keep them updated through edits. This setting can be changed while the server is running."), Category("Modules - Displays")]
         public ObservableCollection<ChannelLink> WorkPartyDisplayChannels { get; set; } = new ObservableCollection<ChannelLink>();
 
-        [Description("Discord channels in which to keep the Election display. DiscordLink will post election messages in these channel and keep it updated through edits. This setting can be changed while the server is running."), Category("Displays")]
+        [Description("Discord channels in which to keep the Election display. DiscordLink will post election messages in these channel and keep it updated through edits. This setting can be changed while the server is running."), Category("Modules - Displays")]
         public ObservableCollection<ChannelLink> ElectionDisplayChannels { get; set; } = new ObservableCollection<ChannelLink>();
 
-        [Description("Discord channels in which to keep the currency display. DiscordLink will post currency messages in these channel and keep it updated through edits. This setting can be changed while the server is running."), Category("Displays")]
+        [Description("Discord channels in which to keep the currency display. DiscordLink will post currency messages in these channel and keep it updated through edits. This setting can be changed while the server is running."), Category("Modules - Displays")]
         public ObservableCollection<CurrencyChannelLink> CurrencyDisplayChannels { get; set; } = new ObservableCollection<CurrencyChannelLink>();
 
-        [Description("Discord channels in which to search for snippets for the Snippet command. This setting can be changed while the server is running."), Category("Inputs")]
+        [Description("Discord channels in which to search for snippets for the Snippet command. This setting can be changed while the server is running."), Category("Modules - Inputs")]
         public ObservableCollection<ChannelLink> SnippetInputChannels { get; set; } = new ObservableCollection<ChannelLink>();
 
-        [Description("Determines if a Discord role will be granted to users who link their Discord accounts. This setting can be changed while the server is running."), Category("Roles")]
+        [Description("Determines if a Discord role will be granted to users who link their Discord accounts. This setting can be changed while the server is running."), Category("Modules - Roles")]
         public bool UseLinkedAccountRole { get; set; } = DLConfig.DefaultValues.UseLinkedAccountRole;
 
-        [Description("Determines if Discord roles matching ingame demographics will be granted to users who have linked their accounts. This setting can be changed while the server is running."), Category("Roles")]
+        [Description("Determines if Discord roles matching ingame demographics will be granted to users who have linked their accounts. This setting can be changed while the server is running."), Category("Modules - Roles")]
         public bool UseDemographicRoles { get; set; } = DLConfig.DefaultValues.UseDemographicRoles;
 
-        [Description("Roles that will be used (and created if needed) for the given demographics. This setting can be changed while the server is running."), Category("Roles")]
+        [Description("Roles that will be used (and created if needed) for the given demographics. This setting can be changed while the server is running."), Category("Modules - Roles")]
         public ObservableCollection<DemographicRoleReplacement> DemographicReplacementRoles { get; set; } = new ObservableCollection<DemographicRoleReplacement>(DLConfig.DefaultValues.DemographicRoleReplacements);
 
-        [Description("Determines if Discord roles matching ingame specialties will be granted to users who have linked their accounts. This setting can be changed while the server is running."), Category("Roles")]
+        [Description("Determines if Discord roles matching ingame specialties will be granted to users who have linked their accounts. This setting can be changed while the server is running."), Category("Modules - Roles")]
         public bool UseSpecialtyRoles { get; set; } = DLConfig.DefaultValues.UseSpecialtyRoles;
 
-        [Description("Discord channels in which to allow commands. If no channels are specified, commands will be allowed in all channels. This setting can be changed while the server is running."), Category("Command Settings")]
+        [Description("Discord channels in which to allow commands. If no channels are specified, commands will be allowed in all channels. This setting can be changed while the server is running."), Category("Commands")]
         public ObservableCollection<ChannelLink> DiscordCommandChannels { get; set; } = new ObservableCollection<ChannelLink>();
 
-        [Description("Max amount of tracked trades allowed per user. Set to 0 to disable trade watchers. This setting can be changed while the server is running, but does not apply retroactively."), Category("Command Settings")]
+        [Description("Max amount of tracked trades allowed per user. Set to 0 to disable trade watchers. This setting can be changed while the server is running, but does not apply retroactively."), Category("Commands")]
         public int MaxTradeWatcherDisplaysPerUser { get; set; } = DLConfig.DefaultValues.MaxTradeWatcherDisplaysPerUser;
 
-        [Description("The message to use for the /DiscordInvite command. The invite link is fetched from the network config and will replace the token " + DLConstants.INVITE_COMMAND_TOKEN + ". This setting can be changed while the server is running."), Category("Command Settings")]
+        [Description("The message to use for the /DiscordInvite command. The invite link is fetched from the network config and will replace the token " + DLConstants.INVITE_COMMAND_TOKEN + ". This setting can be changed while the server is running."), Category("Commands")]
         public string InviteMessage { get; set; } = DLConfig.DefaultValues.InviteMessage;
 
         [Description("Determines what message types will be printed to the server log. All message types below the selected one will be printed as well. This setting can be changed while the server is running."), Category("Plugin Configuration")]
@@ -431,5 +388,11 @@ namespace Eco.Plugins.DiscordLink
 
         [Description("Determines if the output in the display tab of the server GUI should be verbose or not. This setting can be changed while the server is running."), Category("Plugin Configuration")]
         public bool UseVerboseDisplay { get; set; } = DLConfig.DefaultValues.UseVerboseDisplay;
+
+        [Description("Emote keys to replace with eco icons using the value name. This setting can be changed while the server is running."), Category("Emotes")]
+        public ObservableCollection<EmoteIconSubstitution> EmoteIconSubstitutions { get; set; } = new ObservableCollection<EmoteIconSubstitution>(DLConfig.DefaultValues.EmoteSubstitutions);
+
+        [Description("Determines for what sizes of embeds to show the footer containing meta information about posted embeds. All embeds of sizes bigger than the selected one will have footers as well. This setting can be changed while the server is running."), Category("Style - Discord")]
+        public DiscordLinkEmbed.EmbedSize MinEmbedSizeForFooter { get; set; } = DLConfig.DefaultValues.MinEmbedSizeForFooter;
     }
 }

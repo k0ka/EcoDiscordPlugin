@@ -1,7 +1,10 @@
-﻿using Eco.Plugins.DiscordLink.Events;
-using Eco.Plugins.DiscordLink.Utilities;
+﻿using DiscordLink.Source.Utilities;
+using Eco.Moose.Tools.Logger;
+using Eco.Moose.Utils.Constants;
+using Eco.Plugins.DiscordLink.Events;
 using Nito.AsyncEx;
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Eco.Plugins.DiscordLink.Modules
@@ -48,6 +51,13 @@ namespace Eco.Plugins.DiscordLink.Modules
         protected string _status = "Off";
         protected DateTime _startTime = DateTime.MinValue;
         protected int _opsCount = 0;
+        private RollingAverage _opsCountAverage = new RollingAverage(Constants.SECONDS_PER_MINUTE);
+        private Timer _OpsCountTimer = null;
+
+        public Module()
+        {
+            _OpsCountTimer = new Timer(UpdateRollingAverage, null, Constants.MILLISECONDS_PER_MINUTE, Constants.MILLISECONDS_PER_MINUTE);
+        }
 
         public virtual string GetDisplayText(string childInfo, bool verbose)
         {
@@ -56,13 +66,8 @@ namespace Eco.Plugins.DiscordLink.Modules
             {
                 if (verbose)
                 {
-                    int operationsPerMinute = 0;
-                    int elapsedMinutes = (int)(DateTime.Now - _startTime).TotalMinutes;
-                    if (elapsedMinutes > 0)
-                        operationsPerMinute = (_opsCount / elapsedMinutes);
-
                     info += $"\r\nStart Time: {_startTime:yyyy-MM-dd HH:mm}";
-                    info += $"\r\nOperations Per Minute: {operationsPerMinute}";
+                    info += $"\r\nOperations Per Minute: {_opsCountAverage.Average.ToString("0.##")}";
                 }
                 info += $"\r\n{childInfo}";
             }
@@ -155,9 +160,15 @@ namespace Eco.Plugins.DiscordLink.Modules
                 }
                 catch (Exception e)
                 {
-                    Logger.Error($"An error occured while updating the {ToString()} module. Error: {e}");
+                    Logger.Exception($"An error occured while updating the {ToString()} module", e);
                 }
             }
+        }
+
+        private void UpdateRollingAverage(object stateInfo)
+        {
+            _opsCountAverage.Add(_opsCount);
+            _opsCount = 0;
         }
     }
 }

@@ -1,6 +1,9 @@
 ﻿using DSharpPlus;
 using DSharpPlus.Entities;
+using Eco.Moose.Tools.Logger;
 using Eco.Plugins.DiscordLink.Extensions;
+using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace Eco.Plugins.DiscordLink
@@ -12,12 +15,11 @@ namespace Eco.Plugins.DiscordLink
         public static readonly DiscordIntents[] REQUESTED_INTENTS = { DiscordIntents.AllUnprivileged, DiscordIntents.GuildMembers, DiscordIntents.MessageContents };
 
         public static readonly DiscordColor DISCORD_EMBED_COLOR = DiscordColor.Green;
-        public const string ECO_NAME_TAG_COLOR = "7289DAFF";
+        public const string DISCORD_COLOR = "7289DAFF";
 
-        public const string ECO_USER_STEAM_ID = "DiscordLinkSteam";
-        public const string ECO_USER_SLG_ID = "DiscordLinkSlg";
+        public const string INVISIBLE_EMBED_CHAR = "\u200e";
 
-        public const int ECO_PLOT_SIZE_M2 = 5 * 5;
+        public const string ECO_DISCORDLINK_ICON = "<ecoicon name=\"DiscordLinkLogo\">";
 
         public const string INVITE_COMMAND_TOKEN = "[LINK]";
         public const string ECHO_COMMAND_TOKEN = "[ECHO]";
@@ -40,33 +42,78 @@ namespace Eco.Plugins.DiscordLink
         public const int DISCORD_ACTIVITY_STRING_UPDATE_INTERVAL_MS = 900000; // 15 minutes
 
         public const int MAX_TOP_CURRENCY_HOLDER_DISPLAY_LIMIT = 15;
-        public const string CURRENCY_REPORT_COMMAND_MAX_CURRENCIES_PER_TYPE_DEFAULT = "3";
-        public const string CURRENCY_REPORT_COMMAND_MAX_TOP_HOLDERS_PER_CURRENCY_DEFAULT = "5";
-
-        public const int SECONDS_PER_MINUTE = 60;
-        public const int SECONDS_PER_HOUR = SECONDS_PER_MINUTE * 60;
-        public const int SECONDS_PER_DAY = SECONDS_PER_HOUR * 24;
-        public const int SECONDS_PER_WEEK = SECONDS_PER_DAY * 7;
+        public const int CURRENCY_REPORT_COMMAND_MAX_CURRENCIES_PER_TYPE_DEFAULT = 3;
+        public const int CURRENCY_REPORT_COMMAND_MAX_TOP_HOLDERS_PER_CURRENCY_DEFAULT = 5;
 
         public const int POST_SERVER_CONNECTION_WAIT_MS = 3000;
 
         public const string ECO_PANEL_NOTIFICATION = "DLNotification";
         public const string ECO_PANEL_SIMPLE_LIST = "DLSimpleList";
-        public const string ECO_PANEL_COMPLEX_LIST = "DL_ComplexList";
+        public const string ECO_PANEL_COMPLEX_LIST = "DLComplexList";
         public const string ECO_PANEL_DL_MESSAGE_MEDIUM = "DLMessageMedium";
         public const string ECO_PANEL_REPORT = "DLReport";
         public const string ECO_PANEL_DL_TRADES = "DLTrades";
 
-        public static readonly DiscordEmoji ACCEPT_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DiscordClient, ":white_check_mark:");
-        public static readonly DiscordEmoji DENY_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DiscordClient, ":x:");
+        public static DiscordEmoji ACCEPT_EMOJI;
+        public static DiscordEmoji DENY_EMOJI;
 
-        public static readonly DiscordEmoji DEBUG_LOG_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DiscordClient, ":exclamation:");
-        public static readonly DiscordEmoji WARNING_LOG_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DiscordClient, ":small_orange_diamond:");
-        public static readonly DiscordEmoji INFO_LOG_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DiscordClient, ":white_small_square:");
-        public static readonly DiscordEmoji ERROR_LOG_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DiscordClient, ":small_red_triangle:");
+        public static DiscordEmoji DEBUG_LOG_EMOJI;
+        public static DiscordEmoji WARNING_LOG_EMOJI;
+        public static DiscordEmoji INFO_LOG_EMOJI;
+        public static DiscordEmoji ERROR_LOG_EMOJI;
 
         public static readonly DiscordLinkRole ROLE_LINKED_ACCOUNT = new DiscordLinkRole("DiscordLinked", null, DiscordColor.Cyan, false, true, "Linked Discord account to Eco Server");
 
         public static string STORAGE_PATH_ABS { get { return Directory.GetCurrentDirectory() + "/Storage/Mods/DiscordLink/"; } }
+
+        public static readonly Dictionary<string, string> DISCORD_EMOJI_SUBSTITUTION_MAP = new Dictionary<string, string>()
+        {
+            {$"❤{(char)65039}", "heart"},
+            { $"{(char)55358}{(char)56631}{(char)8205}♂{(char)65039}", "man_shrugging"},
+            { $"{(char)55358}{(char)56631}{(char)8205}♀{(char)65039}", "woman_shrugging"},
+            { $"☝{(char)65039}", "point_up"},
+            { "👍", "thumbsup"},
+            { "👎", "thumbsdown"},
+            { "🤔", "thinking" },
+            { "✅", "white_check_mark" },
+            { "❌", "red_cross_mark" },
+            { "🙃", "upside_down"},
+            { "🤘", "metal"},
+            { "🤗", "hugging"},
+            { "🥳", "partying_face"},
+            { "😉", "wink"},
+            { "🥱", "yawning_face"},
+            { "😏", "smirk"},
+            { "🥔", "potato"},
+            { "😓", "sweat"},
+            { "🥰", "smiling_face_with_3_hearts"},
+            { "🤙", "call_me" },
+            { "😮", "open_mouth"},
+            { "😦", "frown"},
+            { "👏", "clap" },
+            { "👀", "eyes"},
+            { "👋", "wave" },
+            { "😆", "laughing" },
+            { "🙂", "slight_smile" },
+        };
+
+        public static bool PostConnectionInit()
+        {
+            try
+            {
+                ACCEPT_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DSharpClient, ":white_check_mark:");
+                DENY_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DSharpClient, ":x:");
+                DEBUG_LOG_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DSharpClient, ":exclamation:");
+                WARNING_LOG_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DSharpClient, ":small_orange_diamond:");
+                INFO_LOG_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DSharpClient, ":white_small_square:");
+                ERROR_LOG_EMOJI = DiscordEmoji.FromName(DiscordLink.Obj.Client.DSharpClient, ":small_red_triangle:");
+                return true;
+            }
+            catch(Exception e)
+            {
+                Logger.Exception("Failed to initialize constants.", e);
+                return false;
+            }
+        }
     }
 }

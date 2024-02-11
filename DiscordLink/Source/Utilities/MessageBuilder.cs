@@ -6,21 +6,28 @@ using System.Text;
 using System.Threading.Tasks;
 using DSharpPlus;
 using DSharpPlus.Entities;
+using DSharpPlus.SlashCommands;
 using Eco.Core.Utils;
+using Eco.Gameplay.Auth;
+using Eco.Gameplay.Civics;
 using Eco.Gameplay.Civics.Demographics;
 using Eco.Gameplay.Civics.Elections;
 using Eco.Gameplay.Civics.Laws;
 using Eco.Gameplay.Civics.Titles;
 using Eco.Gameplay.Components;
+using Eco.Gameplay.Disasters;
 using Eco.Gameplay.Economy;
+using Eco.Gameplay.Economy.Reputation;
 using Eco.Gameplay.Economy.WorkParties;
 using Eco.Gameplay.GameActions;
 using Eco.Gameplay.Items;
 using Eco.Gameplay.Objects;
 using Eco.Gameplay.Players;
 using Eco.Gameplay.Property;
+using Eco.Gameplay.Settlements;
 using Eco.Gameplay.Skills;
 using Eco.Gameplay.Systems.Balance;
+using Eco.Gameplay.Components.Store;
 using Eco.Plugins.DiscordLink.Extensions;
 using Eco.Plugins.Networking;
 using Eco.Simulation.Types;
@@ -28,15 +35,17 @@ using Eco.Shared.Networking;
 using Eco.Shared.Utils;
 using Eco.Shared;
 using Eco.Shared.Items;
-
-using static Eco.Shared.Mathf; // Avoiding collisions with system mathf 
-
-using StoreOfferList = System.Collections.Generic.IEnumerable<System.Linq.IGrouping<string, System.Tuple<Eco.Gameplay.Components.StoreComponent, Eco.Gameplay.Components.TradeOffer>>>;
-using StoreOfferGroup = System.Linq.IGrouping<string, System.Tuple<Eco.Gameplay.Components.StoreComponent, Eco.Gameplay.Components.TradeOffer>>;
-using static Eco.Plugins.DiscordLink.Utilities.Utils;
-using Eco.Gameplay.Auth;
 using Eco.Shared.IoC;
-using Eco.Gameplay.Disasters;
+using Eco.Moose.Utils.Extensions;
+using Eco.Moose.Utils.Lookups;
+
+using static Eco.Shared.Mathf; // Avoiding collisions with system mathf
+
+using Constants = Eco.Moose.Utils.Constants.Constants;
+using Text = Eco.Shared.Utils.Text;
+
+using StoreOfferList = System.Collections.Generic.IEnumerable<System.Linq.IGrouping<string, System.Tuple<Eco.Gameplay.Components.Store.StoreComponent, Eco.Gameplay.Components.TradeOffer>>>;
+using StoreOfferGroup = System.Linq.IGrouping<string, System.Tuple<Eco.Gameplay.Components.Store.StoreComponent, Eco.Gameplay.Components.TradeOffer>>;
 
 namespace Eco.Plugins.DiscordLink.Utilities
 {
@@ -63,24 +72,26 @@ namespace Eco.Plugins.DiscordLink.Utilities
             ActiveElectionList          = 1 << 15,
             LawCount                    = 1 << 16,
             LawList                     = 1 << 17,
+            ActiveSettlementCount       = 1 << 18,
+            ActiveSettlementList        = 1 << 19,
             All                         = ~0
         }
 
         public enum PlayerReportComponentFlag
         {
-            OnlineStatus    = 1 << 0,
-            PlayTime        = 1 << 1,
-            Exhaustion      = 1 << 2,
-            Permissions     = 1 << 3,
-            AccessLists     = 1 << 4,
-            DiscordInfo     = 1 << 5,
-            Reputation      = 1 << 6,
-            Experience      = 1 << 7,
-            Skills          = 1 << 8,
-            Demographics    = 1 << 9,
-            Titles          = 1 << 10,
-            Properties      = 1 << 11,
-            All             = ~0
+            [ChoiceName("Online")]          OnlineStatus    = 1 << 0,
+            [ChoiceName("Playtime")]        PlayTime        = 1 << 1,
+            [ChoiceName("Exhaustion")]      Exhaustion      = 1 << 2,
+            [ChoiceName("Permissions")]     Permissions     = 1 << 3,
+            [ChoiceName("Access")]          AccessLists     = 1 << 4,
+            [ChoiceName("Discord")]         DiscordInfo     = 1 << 5,
+            [ChoiceName("Reputation")]      Reputation      = 1 << 6,
+            [ChoiceName("Reputation")]      Experience      = 1 << 7,
+            [ChoiceName("Skills")]          Skills          = 1 << 8,
+            [ChoiceName("Demographics")]    Demographics    = 1 << 9,
+            [ChoiceName("Titles")]          Titles          = 1 << 10,
+            [ChoiceName("Properties")]      Properties      = 1 << 11,
+            [ChoiceName("All")]             All             = ~0
         }
 
         public enum PermissionReportComponentFlag
@@ -114,52 +125,69 @@ namespace Eco.Plugins.DiscordLink.Utilities
         {
             public static object Items { get; internal set; }
 
+            public static string GetVersionMessage()
+            {
+                Version? modIOVersion = DiscordLink.Obj.ModIOVersion;
+                string modIOVersionDesc = modIOVersion != null ? $"Latest version: {modIOVersion.ToString(3)}" : "Latest version: Unknown";
+
+                Version installedVersion = DiscordLink.Obj.InstalledVersion;
+                string installedVersionDesc = $"Installed version: {installedVersion.ToString(3)}";
+
+                if (modIOVersion == null)
+                    modIOVersionDesc = Text.Color(Color.Red, modIOVersionDesc);
+
+                if (modIOVersion != null && modIOVersion > installedVersion)
+                    installedVersionDesc = Text.Color(Color.Red, installedVersionDesc);
+
+                return $"{modIOVersionDesc}\n{installedVersionDesc}";
+            }
+
             public static string GetAboutMessage()
             {
-                return $"This server is running the DiscordLink plugin version {DiscordLink.Obj.PluginVersion}." +
+                return $"This server is running the DiscordLink plugin version {DiscordLink.Obj.InstalledVersion.ToString(3)}." +
                     "\nIt connects the game server to a Discord bot in order to perform seamless communication between Eco and Discord." +
                     "\nThis enables you to chat with players who are currently not online in Eco, but are available on Discord." +
                     "\nDiscordLink can also be used to display information about the Eco server in Discord, such as who is online and what items are available on the market." +
                     "\n\nFor more information, visit \"www.github.com/Eco-DiscordLink/EcoDiscordPlugin\".";
             }
 
-            public static string GetLinkAccountInfoMessage(SharedCommands.CommandInterface context )
+            public static string GetLinkAccountInfoMessage(SharedCommands.CommandInterface context)
             {
                 return "By linking your Eco account to your Discord account on this server, you can enable the following features:" +
-                    $"\n* Trade Watcher Displays - An always up to date view of a {MessageUtils.GetCommandTokenForContext(context)}DLT command in your DMs with the DiscordLink bot." +
+                    $"\n* Trade Watcher Displays - An always up to date view of a `/DLT` command in your DMs with the DiscordLink bot." +
                     "\n* Discord election voting - Vote in elections directly via Discord." +
                     "\n* DiscordLinked Role and roles matching your demographics and specializations." +
                     "\n" +
                     "\nLink instructions" +
-                    $"\n1. Use /DL-Link <UserName> in Eco. The username parameter is your Discord account name (not nickname) with or without the #xxxx at the end. Example: /DL-Link Monzun#1234" +
+                    $"\n1. Use \"/DL LinkAccount\" <UserName> in Eco. The username parameter is your Discord account name (not nickname). Example: /DL LinkAccount Monzun" +
                     "\n2. If your account could be found on the Discord server, the bot will send you a DM." +
                     "\n3. Click the approve button on the message to verify that you are the owner of both the Eco and Discord account." +
                     "\n4. Your account is now linked!" +
                     "\n" +
                     "\nUnlinking" +
-                    $"\nIf you no longer wish to have your account linked or you need to reset it for some reason, you can use {MessageUtils.GetCommandTokenForContext(context)}DL-Unlink." +
+                    $"\nIf you no longer wish to have your account linked or you need to reset it for some reason, you can use `/DL UnlinkAccount`." +
                     "\n" +
                     "\nAdditional Information" +
                     "\n* Your account link is only valid for one combination of Eco and Discord servers. If you join a new server, you will need to link your account on that server as well." +
-                    "\n* Your account link remains active over world resets. It is only removed if you use the /dl-unlink command or if the server host deletes the persistent storage data.";
+                    "\n* Your account link remains active over world resets. It is only removed if you use the /DL UnlinkAccount command or if the server host deletes the persistent storage data.";
             }
 
             public static async Task<string> GetDisplayStringAsync(bool verbose)
             {
                 DiscordLink plugin = DiscordLink.Obj;
-                DLDiscordClient client = plugin.Client;
+                DiscordClient client = plugin.Client;
                 StringBuilder builder = new StringBuilder();
-                builder.AppendLine($"DiscordLink {plugin.PluginVersion}");
+                builder.AppendLine($"DiscordLink {plugin.InstalledVersion.ToString(3)}");
                 if (verbose)
                 {
                     builder.AppendLine($"Server Name: {MessageUtils.FirstNonEmptyString(DLConfig.Data.ServerName, MessageUtils.StripTags(NetworkManager.GetServerInfo().Description), "[Server Title Missing]")}");
                     builder.AppendLine($"Server Version: {EcoVersion.VersionNumber}");
-                    if (client.ConnectionStatus == DLDiscordClient.ConnectionState.Connected)
-                        builder.AppendLine($"D# Version: {client.DiscordClient.VersionString}");
+                    if (client.ConnectionStatus == DiscordClient.ConnectionState.Connected)
+                        builder.AppendLine($"D# Version: {client.DSharpClient.VersionString}");
                 }
                 builder.AppendLine($"Plugin Status: {plugin.GetStatus()}");
                 builder.AppendLine($"Discord Client Status: {client.Status}");
-                if (client.LastConnectionError != DLDiscordClient.ConnectionError.None)
+                if (client.LastConnectionError != DiscordClient.ConnectionError.None)
                     builder.AppendLine($"Discord Client Error: {client.LastConnectionError}");
 
                 TimeSpan elapssedTime = DateTime.Now.Subtract(plugin.InitTime);
@@ -167,7 +195,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     builder.AppendLine($"Start Time: {plugin.InitTime:yyyy-MM-dd HH:mm}");
                 builder.AppendLine($"Running Time: {(int)elapssedTime.TotalDays}:{elapssedTime.Hours}:{elapssedTime.Minutes}");
 
-                if (client.ConnectionStatus != DLDiscordClient.ConnectionState.Connected)
+                if (client.ConnectionStatus != DiscordClient.ConnectionState.Connected)
                     return builder.ToString();
 
                 if (verbose)
@@ -176,17 +204,19 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 builder.AppendLine();
                 builder.AppendLine("--- User Data ---");
                 builder.AppendLine($"Linked users: {DLStorage.PersistentData.LinkedUsers.Count}");
+                builder.AppendLine($"Opt-in users: {DLStorage.PersistentData.OptedInUsers.Count}");
+                builder.AppendLine($"Opt-out users: {DLStorage.PersistentData.OptedOutUsers.Count}");
                 builder.AppendLine();
                 builder.AppendLine("--- Modules ---");
 
-                string moduleDisplayText = plugin.Modules.Select(m => m.GetDisplayText(string.Empty, verbose)).DoubleNewlineList();
+                string moduleDisplayText = plugin.Modules.Select(module => module.GetDisplayText(string.Empty, verbose)).DoubleNewlineList();
                 builder.AppendLine(moduleDisplayText);
 
                 if (verbose)
                 {
                     builder.AppendLine();
                     builder.AppendLine("--- Config ---");
-                    builder.AppendLine($"Name: {client.DiscordClient.CurrentUser.Username}");
+                    builder.AppendLine($"Name: {client.DSharpClient.CurrentUser.Username}");
 
                     builder.AppendLine();
                     builder.AppendLine("--- Storage - Persistent ---");
@@ -194,13 +224,45 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     foreach (LinkedUser linkedUser in DLStorage.PersistentData.LinkedUsers)
                     {
                         User ecoUser = linkedUser.EcoUser;
-                        string ecoUserName = (ecoUser != null) ? MessageUtils.StripTags(ecoUser.Name) : "[Uknown Eco User]";
+                        string ecoUserName = (ecoUser != null) ? MessageUtils.StripTags(ecoUser.Name) : "[Unknown Eco User]";
 
                         DiscordUser discordUser = linkedUser.DiscordMember;
                         string discordUserName = (discordUser != null) ? discordUser.Username : "[Unknown Discord User]";
+                        string valididty;
+                        if (linkedUser.Valid)
+                        {
+                            valididty = "Valid";
+                        }
+                        else if (linkedUser.Verified)
+                        {
+                            if (linkedUser.DiscordMember == null && linkedUser.EcoUser == null)
+                                valididty = "Failed lookup (Eco & Discord)";
+                            else if (linkedUser.DiscordMember == null)
+                                valididty = "Failed lookup (Discord)";
+                            else if (linkedUser.EcoUser == null)
+                                valididty = "Failed lookup (Eco)";
+                            else
+                                valididty = "Verified but invalid";
 
-                        string verified = (linkedUser.Verified) ? "Verified" : "Unverified";
-                        builder.AppendLine($"{ecoUserName} <--> {discordUserName} - {verified}");
+                        }
+                        else
+                        {
+                            valididty = "Unverified";
+                        }
+
+                        builder.AppendLine($"{ecoUserName} <--> {discordUserName} - {valididty}");
+                    }
+                    builder.AppendLine();
+                    builder.AppendLine("Opt-in User Data:");
+                    foreach (EcoUser user in DLStorage.PersistentData.OptedInUsers)
+                    {
+                        builder.AppendLine(user.GetUser.Name);
+                    }
+                    builder.AppendLine();
+                    builder.AppendLine("Opt-out User Data:");
+                    foreach (EcoUser user in DLStorage.PersistentData.OptedOutUsers)
+                    {
+                        builder.AppendLine(user.GetUser.Name);
                     }
 
                     builder.AppendLine();
@@ -228,7 +290,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
             public static string GetConfigVerificationReport()
             {
                 StringBuilder builder = new StringBuilder();
-                if (DiscordLink.Obj.Client.ConnectionStatus != DLDiscordClient.ConnectionState.Connected)
+                if (DiscordLink.Obj.Client.ConnectionStatus != DiscordClient.ConnectionState.Connected)
                 {
                     builder.AppendLine("[Discord Client not connected - Parts of the config was not possible to verify]");
                 }
@@ -236,9 +298,9 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 DLConfigData config = DLConfig.Data;
 
                 // Guild
-                if (string.IsNullOrWhiteSpace(config.DiscordServer))
+                if (config.DiscordServerID == 0)
                 {
-                    builder.AppendLine("- Discord server not configured.");
+                    builder.AppendLine("- Discord server ID not configured.");
                 }
 
                 // Bot Token
@@ -253,7 +315,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     builder.AppendLine($"- Invite message does not contain the invite link token {DLConstants.INVITE_COMMAND_TOKEN}.");
                 }
 
-                if (DiscordLink.Obj.Client.ConnectionStatus == DLDiscordClient.ConnectionState.Connected)
+                if (DiscordLink.Obj.Client.ConnectionStatus == DiscordClient.ConnectionState.Connected)
                 {
                     // Discord guild and channel information isn't available the first time this function is called
                     if (DiscordLink.Obj.Client.Guild != null && DLConfig.GetChannelLinks(verifiedLinksOnly: false).Count > 0)
@@ -279,7 +341,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 if (flag == 0)
                     return "Permission Check Failed";
 
-                DLDiscordClient client = DiscordLink.Obj.Client;
+                DiscordClient client = DiscordLink.Obj.Client;
                 StringBuilder builder = new StringBuilder();
                 if (flag.HasFlag(PermissionReportComponentFlag.Intents))
                 {
@@ -312,6 +374,10 @@ namespace Eco.Plugins.DiscordLink.Utilities
                             if (!client.ChannelHasPermission(link.Channel, permission))
                             {
                                 builder.AppendLine($"- Missing Channel Permission \"{permission}\" in channel \"{link.Channel.Name}\".");
+                                if (client.BotHasPermission(permission))
+                                {
+                                    builder.AppendLine($"  ^ This is only related to the Channel's settings inside your Discord Server and not the DiscordLink configuration.");
+                                }
                             }
                         }
                     }
@@ -347,7 +413,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
             public static string GetChannelLinkList()
             {
                 StringBuilder builder = new StringBuilder();
-                foreach(ChannelLink link in DLConfig.GetChannelLinks(verifiedLinksOnly: false))
+                foreach (ChannelLink link in DLConfig.GetChannelLinks(verifiedLinksOnly: false))
                 {
                     builder.Append(link.ToString());
                     if (!link.IsValid())
@@ -355,7 +421,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     builder.AppendLine();
                 }
 
-                if(builder.Length == 0)
+                if (builder.Length == 0)
                 {
                     builder.AppendLine("No channel links found in configuration");
                 }
@@ -364,50 +430,65 @@ namespace Eco.Plugins.DiscordLink.Utilities
 
             public static string GetPlayerCount()
             {
-                return $"{EcoUtils.NumOnlinePlayers}/{EcoUtils.NumTotalPlayers}";
+                return $"{Lookups.NumOnlinePlayers}/{Lookups.NumTotalPlayers}";
             }
 
             public static string GetOnlinePlayerList()
             {
-                string playerList = string.Join("\n", EcoUtils.OnlineUsersAlphabetical.Select(u => MessageUtils.StripTags(u.Name)));
+                string playerList = string.Join("\n", Lookups.OnlineUsersAlphabetical.Select(user => MessageUtils.StripTags(user.Name)));
                 if (string.IsNullOrEmpty(playerList))
                     playerList = "-- No players online --";
 
                 return playerList;
             }
 
-            public static void GetActiveElectionsList(out string electionList, out string votesList, out string timeRemainingList)
+            public static void GetActiveElectionsList(out string electionList, out string settlementList, out string VoteAndtimeRemainingList)
             {
                 electionList = string.Empty;
-                votesList = string.Empty;
-                timeRemainingList = string.Empty;
-                foreach (Election election in EcoUtils.ActiveElections)
+                settlementList = string.Empty;
+                VoteAndtimeRemainingList = string.Empty;
+                foreach (Election election in Lookups.ActiveElections.OrderByDescending(election => election.Settlement.CachedData.CultureRecursiveTotal))
                 {
                     electionList += $"{MessageUtils.StripTags(election.Name)}\n";
-                    votesList += $"{election.TotalVotes} Votes\n";
-                    timeRemainingList += $"{TimeFormatter.FormatSpan(election.TimeLeft)}\n";
+                    settlementList += election.Settlement != null ? $"{MessageUtils.StripTags(election.Settlement.Name)}\n" : "None";
+                    VoteAndtimeRemainingList += $"{election.TotalVotes} | {TimeFormatter.FormatSpan(election.TimeLeft)}\n";
                 }
             }
 
-            public static void GetActiveLawsList(out string lawList, out string creatorList)
+            public static void GetActiveLawsList(out string lawList, out string settlementList, out string creatorList)
             {
                 lawList = string.Empty;
+                settlementList = string.Empty;
                 creatorList = string.Empty;
-                foreach (Law law in EcoUtils.ActiveLaws)
+                foreach (Law law in Lookups.ActiveLaws.OrderByDescending(law => law.Settlement.CachedData.CultureRecursiveTotal))
                 {
                     lawList += $"{MessageUtils.StripTags(law.Name)}\n";
+                    settlementList += law.Settlement != null ? $"{MessageUtils.StripTags(law.Settlement.Name)}\n" : "None";
                     creatorList += law.Creator != null ? $"{MessageUtils.StripTags(law.Creator.Name)}\n" : "Unknown\n";
+                }
+            }
+
+            public static void GetActiveSettlementsList(out string settlementList, out string activeCitizenCountAndInfluenceList, out string leaderList)
+            {
+                settlementList = string.Empty;
+                activeCitizenCountAndInfluenceList = string.Empty;
+                leaderList = string.Empty;
+                foreach (Settlement settlement in Lookups.ActiveSettlements.OrderByDescending(settlement => settlement.CachedData.CultureRecursiveTotal))
+                {
+                    settlementList += $"{MessageUtils.StripTags(settlement.Name)}\n";
+                    activeCitizenCountAndInfluenceList += $"{settlement.Citizens.Count(user => user.IsActive)} | {settlement.CachedData.CultureRecursiveTotal.ToString("0")}\n";
+                    leaderList += settlement.Leader != null && settlement.Leader.Occupied ? $"{MessageUtils.StripTags(settlement.Leader.UserSet.First().Name)}\n" : "None\n";
                 }
             }
 
             public static string GetPlayerSessionTimeList()
             {
-                return string.Join("\n", EcoUtils.OnlineUsersAlphabetical.Select(u => GetTimeDescription(u.GetSecondsSinceLogin(), TimespanStringComponent.Day | TimespanStringComponent.Hour | TimespanStringComponent.Minute, TimespanStringComponent.Hour | TimespanStringComponent.Minute)));
+                return string.Join("\n", Lookups.OnlineUsersAlphabetical.Select(user => GetTimeDescription(user.GetSecondsSinceLogin(), TimespanStringComponent.Day | TimespanStringComponent.Hour | TimespanStringComponent.Minute, TimespanStringComponent.Hour | TimespanStringComponent.Minute)));
             }
 
             public static string GetPlayerExhaustionTimeList()
             {
-                return string.Join("\n", EcoUtils.OnlineUsersAlphabetical.Select(u => (u.ExhaustionMonitor?.IsExhausted ?? false) ? "Exhausted" : GetTimeDescription(u.GetSecondsLeftUntilExhaustion(), TimespanStringComponent.Day | TimespanStringComponent.Hour | TimespanStringComponent.Minute, TimespanStringComponent.Hour | TimespanStringComponent.Minute)));
+                return string.Join("\n", Lookups.OnlineUsersAlphabetical.Select(user => (user.ExhaustionMonitor?.IsExhausted ?? false) ? "Exhausted" : GetTimeDescription(user.GetSecondsLeftUntilExhaustion(), TimespanStringComponent.Day | TimespanStringComponent.Hour | TimespanStringComponent.Minute, TimespanStringComponent.Hour | TimespanStringComponent.Minute)));
             }
 
             public enum TimespanStringComponent
@@ -422,7 +503,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
             public static string GetGameTimeStamp()
             {
                 double seconds = Simulation.Time.WorldTime.Seconds;
-                return $"{((int)TimeUtil.SecondsToHours(seconds) % 24).ToString("00") }" +
+                return $"{((int)TimeUtil.SecondsToHours(seconds) % 24).ToString("00")}" +
                     $":{((int)(TimeUtil.SecondsToMinutes(seconds) % 60)).ToString("00")}" +
                     $":{((int)seconds % 60).ToString("00")}";
             }
@@ -501,7 +582,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
         {
             public static string GetActivityString()
             {
-                int onlinePlayers = EcoUtils.NumOnlinePlayers;
+                int onlinePlayers = Lookups.NumOnlinePlayers;
                 string activityString;
                 if (onlinePlayers > 0)
                 {
@@ -580,24 +661,39 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     embed.AddField("Webpage Address", fieldText);
                 }
 
-                if (flag.HasFlag(ServerInfoComponentFlag.PlayerCount) || flag.HasFlag(ServerInfoComponentFlag.LawCount) || flag.HasFlag(ServerInfoComponentFlag.ActiveElectionCount))
+                if (flag.HasFlag(ServerInfoComponentFlag.PlayerCount) || flag.HasFlag(ServerInfoComponentFlag.ActiveSettlementCount))
                 {
                     int fieldsAdded = 0;
                     if (flag.HasFlag(ServerInfoComponentFlag.PlayerCount))
                     {
-                        embed.AddField("Player Count", $"{EcoUtils.NumOnlinePlayers} Online / {serverInfo.TotalPlayers} Total", inline: true);
+                        embed.AddField("Player Count", $"{Lookups.NumOnlinePlayers} Online / {serverInfo.TotalPlayers} Total", inline: true);
                         ++fieldsAdded;
                     }
 
+                    if (flag.HasFlag(ServerInfoComponentFlag.ActiveSettlementCount))
+                    {
+                        embed.AddField("Active Settlement Count", $"{Lookups.ActiveSettlements.Count()}", inline: true);
+                        ++fieldsAdded;
+                    }
+
+                    for (int i = fieldsAdded; i < DLConstants.DISCORD_EMBED_FIELDS_PER_ROW_LIMIT; ++i)
+                    {
+                        embed.AddAlignmentField();
+                    }
+                }
+
+                if(flag.HasFlag(ServerInfoComponentFlag.LawCount) || flag.HasFlag(ServerInfoComponentFlag.ActiveElectionCount))
+                {
+                    int fieldsAdded = 0;
                     if (flag.HasFlag(ServerInfoComponentFlag.LawCount))
                     {
-                        embed.AddField("Law Count", $"{EcoUtils.ActiveLaws.Count()}", inline: true);
+                        embed.AddField("Law Count", $"{Lookups.ActiveLaws.Count()}", inline: true);
                         ++fieldsAdded;
                     }
 
                     if (flag.HasFlag(ServerInfoComponentFlag.ActiveElectionCount))
                     {
-                        embed.AddField("Active Elections Count", $"{EcoUtils.ActiveElections.Count()}", inline: true);
+                        embed.AddField("Active Elections Count", $"{Lookups.ActiveElections.Count()}", inline: true);
                         ++fieldsAdded;
                     }
 
@@ -639,18 +735,18 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     }
                 }
 
-                if (BalancePlugin.Obj.Config.IsLimitingHours && flag.HasFlag(ServerInfoComponentFlag.ExhaustionResetTimeLeft) || flag.HasFlag(ServerInfoComponentFlag.ExhaustedPlayerCount))
+                if (BalancePlugin.Obj.Config.IsLimitingHours && (flag.HasFlag(ServerInfoComponentFlag.ExhaustionResetTimeLeft) || flag.HasFlag(ServerInfoComponentFlag.ExhaustedPlayerCount)))
                 {
                     int fieldsAdded = 0;
                     if (flag.HasFlag(ServerInfoComponentFlag.ExhaustionResetTimeLeft))
                     {
-                        embed.AddField("Exhaustion Reset", DateTime.Now.AddSeconds(EcoUtils.SecondsLeftOnDay).ToDiscordTimeStamp('R'), inline: true);
+                        embed.AddField("Exhaustion Reset", DateTime.Now.AddSeconds(Lookups.SecondsLeftOnDay).ToDiscordTimeStamp('R'), inline: true);
                         ++fieldsAdded;
                     }
 
                     if (flag.HasFlag(ServerInfoComponentFlag.ExhaustedPlayerCount))
                     {
-                        embed.AddField("Exhausted Players Count", EcoUtils.NumExhaustedPlayers.ToString(), inline: true);
+                        embed.AddField("Exhausted Players Count", Lookups.NumExhaustedPlayers.ToString(), inline: true);
                         ++fieldsAdded;
                     }
 
@@ -662,7 +758,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
 
                 if (flag.HasFlag(ServerInfoComponentFlag.PlayerList))
                 {
-                    embed.AddField($"Online Players ({EcoUtils.NumOnlinePlayers})", Shared.GetOnlinePlayerList(), inline: true);
+                    embed.AddField($"Online Players ({Lookups.NumOnlinePlayers})", Shared.GetOnlinePlayerList(), inline: true);
                     if (flag.HasFlag(ServerInfoComponentFlag.PlayerListLoginTime))
                     {
                         string sessionTimeList = Shared.GetPlayerSessionTimeList();
@@ -676,7 +772,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                         embed.AddAlignmentField();
                     }
 
-                    if(flag.HasFlag(ServerInfoComponentFlag.PlayerListExhaustionTime) && BalancePlugin.Obj.Config.IsLimitingHours)
+                    if (flag.HasFlag(ServerInfoComponentFlag.PlayerListExhaustionTime) && BalancePlugin.Obj.Config.IsLimitingHours)
                     {
                         string exhaustTimeList = Shared.GetPlayerExhaustionTimeList();
                         if (!string.IsNullOrWhiteSpace(exhaustTimeList))
@@ -690,14 +786,31 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     }
                 }
 
+                if(flag.HasFlag(ServerInfoComponentFlag.ActiveSettlementList))
+                {
+                    Shared.GetActiveSettlementsList(out string settlementList, out string activeCitizenCountList, out string leaderList);
+                    if (!string.IsNullOrEmpty(settlementList))
+                    {
+                        embed.AddField("Active Settlements", settlementList, inline: true);
+                        embed.AddField("Active Citizen & Influence", activeCitizenCountList, inline: true);
+                        embed.AddField("Leader", leaderList, inline: true);
+                    }
+                    else
+                    {
+                        embed.AddField("Active Settlements", "-- No active settlements --", inline: true);
+                        embed.AddAlignmentField();
+                        embed.AddAlignmentField();
+                    }
+                }
+
                 if (flag.HasFlag(ServerInfoComponentFlag.ActiveElectionList))
                 {
-                    Shared.GetActiveElectionsList(out string electionList, out string votesList, out string timeRemainingList);
+                    Shared.GetActiveElectionsList(out string electionList, out string settlementList, out string votesAndTimeRemainingList);
                     if (!string.IsNullOrEmpty(electionList))
                     {
                         embed.AddField("Active Elections", electionList, inline: true);
-                        embed.AddField("Votes", votesList, inline: true);
-                        embed.AddField("Time Remaining", timeRemainingList, inline: true);
+                        embed.AddField("Settlement", settlementList, inline: true);
+                        embed.AddField("Votes & Timer", votesAndTimeRemainingList, inline: true);
                     }
                     else
                     {
@@ -709,12 +822,12 @@ namespace Eco.Plugins.DiscordLink.Utilities
 
                 if (flag.HasFlag(ServerInfoComponentFlag.LawList))
                 {
-                    Shared.GetActiveLawsList(out string lawList, out string creatorList);
+                    Shared.GetActiveLawsList(out string lawList, out string settlementList, out string creatorList);
                     if (!string.IsNullOrEmpty(lawList))
                     {
                         embed.AddField("Active Laws", lawList, inline: true);
+                        embed.AddField("Settlement", settlementList, inline: true);
                         embed.AddField("Creator", creatorList, inline: true);
-                        embed.AddAlignmentField();
                     }
                     else
                     {
@@ -752,9 +865,9 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 // Play time
                 if (flag.HasFlag(PlayerReportComponentFlag.PlayTime))
                 {
-                    report.AddField("Playtime Total", Shared.GetTimeDescription(user.OnlineTimeLog.SecondsOnline(0.0), annotate: true), inline: true);
-                    report.AddField("Playtime last 24 hours", Shared.GetTimeDescription(user.OnlineTimeLog.SecondsOnline(DLConstants.SECONDS_PER_DAY), Shared.TimespanStringComponent.Hour | Shared.TimespanStringComponent.Minute | Shared.TimespanStringComponent.Second, annotate: true), inline: true);
-                    report.AddField("Playtime Last 7 days", Shared.GetTimeDescription(user.OnlineTimeLog.SecondsOnline(DLConstants.SECONDS_PER_WEEK), annotate: true), inline: true);
+                    report.AddField("Playtime Total", Shared.GetTimeDescription(user.OnlineTimeLog.ActiveSeconds(0.0), annotate: true), inline: true);
+                    report.AddField("Playtime last 24 hours", Shared.GetTimeDescription(user.OnlineTimeLog.ActiveSeconds(Constants.SECONDS_PER_DAY), Shared.TimespanStringComponent.Hour | Shared.TimespanStringComponent.Minute | Shared.TimespanStringComponent.Second, annotate: true), inline: true);
+                    report.AddField("Playtime Last 7 days", Shared.GetTimeDescription(user.OnlineTimeLog.ActiveSeconds(Constants.SECONDS_PER_WEEK), annotate: true), inline: true);
                 }
 
                 // Exhaustion
@@ -804,9 +917,9 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 // Reputation
                 if (flag.HasFlag(PlayerReportComponentFlag.Reputation))
                 {
-                    Reputation reputation = ReputationManager.Obj.Rep(user.Name, createIfMissing: false);
-                    report.AddField("Reputation", ((int)reputation.CachedTotalReputation).ToString(), inline: true);
-                    report.AddField("Can Give Today", ((int)reputation.GiveableReputation).ToString(), inline: true);
+                    float reputation = ReputationManager.Obj.GetRep(user);
+                    report.AddField("Reputation", reputation.ToString("N0"), inline: true);
+                    report.AddField("Can Give Today", reputation.ToString("N0"), inline: true);
                     report.AddAlignmentField();
                 }
 
@@ -825,13 +938,13 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     StringBuilder levelsDesc = new StringBuilder();
                     StringBuilder percentOfNextLevelDoneDesc = new StringBuilder();
 
-                    IEnumerable<Skill> orderedSkills = user.Skillset.Skills.Where(s => s.Level > 0).OrderByDescending(s => s.Level);
+                    IEnumerable<Skill> orderedSkills = user.Skillset.Skills.Where(skill => skill.Level > 0).OrderByDescending(skill => skill.Level);
                     foreach (Skill skill in orderedSkills)
                     {
                         bool maxLevelReached = skill.Level >= skill.MaxLevel;
                         skillsDesc.AppendLine(skill.DisplayName);
                         levelsDesc.AppendLine(skill.Level.ToString() + (maxLevelReached ? " (Max)" : string.Empty));
-                        percentOfNextLevelDoneDesc.AppendLine(maxLevelReached ? "N/A" : $"{(int)skill.PercentTowardsNextLevel}%");
+                        percentOfNextLevelDoneDesc.AppendLine(maxLevelReached ? "N/A" : $"{(int)(skill.PercentTowardsNextLevel * 100)}%");
                     }
 
                     report.AddField("Skills", skillsDesc.ToString(), inline: true);
@@ -843,7 +956,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 if (flag.HasFlag(PlayerReportComponentFlag.Demographics))
                 {
                     StringBuilder demographicDesc = new StringBuilder();
-                    IEnumerable<Demographic> userDemographics = EcoUtils.ActiveDemographics.Where(demographic => demographic.ContainsUser(user)).OrderBy(demographic => demographic.Name);
+                    IEnumerable<Demographic> userDemographics = Lookups.ActiveDemographics.Where(demographic => demographic.ContainsUser(user)).OrderBy(demographic => demographic.Name);
                     foreach (Demographic demographic in userDemographics)
                     {
                         demographicDesc.AppendLine(demographic.Name + (demographic.Creator == user ? " (Creator)" : string.Empty));
@@ -855,7 +968,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 if (flag.HasFlag(PlayerReportComponentFlag.Titles))
                 {
                     StringBuilder titlesDesc = new StringBuilder();
-                    IEnumerable<Title> userTitles = EcoUtils.ActiveTitles.Where(title => title.UserSet.Contains(user)).OrderBy(title => title.Name);
+                    IEnumerable<Title> userTitles = Lookups.ActiveTitles.Where(title => title.UserSet.Contains(user)).OrderBy(title => title.Name);
                     foreach (Title title in userTitles)
                     {
                         titlesDesc.AppendLine(title.Name + (title.Creator == user ? " (Creator)" : string.Empty));
@@ -871,12 +984,12 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     StringBuilder propertiessSizeOrVehicleDesc = new StringBuilder();
                     StringBuilder propertiessLocationDesc = new StringBuilder();
 
-                    IEnumerable<Deed> userDeeds = EcoUtils.Deeds.Where(deed => deed.ContainsOwner(user)).OrderByDescending(deed => deed.GetTotalPlotSize());
+                    IEnumerable<Deed> userDeeds = Lookups.Deeds.Where(deed => deed.ContainsOwner(user)).OrderByDescending(deed => deed.GetTotalPlotSize());
                     foreach (Deed deed in userDeeds)
                     {
                         propertiessDesc.AppendLine(deed.Name.TrimEndString(" Deed"));
                         propertiessSizeOrVehicleDesc.AppendLine(deed.IsVehicle() ? deed.GetVehicle().Parent.CreatingItem.DisplayName : $"{deed.GetTotalPlotSize()}m²");
-                        propertiessLocationDesc.AppendLine(deed.IsVehicle() ? deed.GetVehicle().Parent.Position3i.ToString() : deed.CenterPos == null ? deed.CenterPos.ToString() : "Unknown");
+                        propertiessLocationDesc.AppendLine(deed.IsVehicle() ? deed.GetVehicle().Parent.Position3i.ToString() : deed.CachedCenterPos == null ? deed.CachedCenterPos.ToString() : "Unknown");
                     }
 
                     bool hasProperty = userDeeds.Count() > 0;
@@ -908,7 +1021,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                     // Some bank accounts (e.g treasury) have no creator and one will belong to the bot
                     // Unbacked currencies has their creator owning infinity
                     float currencyAmount = accountEnumerator.Current.GetCurrencyHoldingVal(currency);
-                    if (accountEnumerator.Current.Creator == null || accountEnumerator.Current.Creator == DiscordLink.Obj.EcoUser || currencyAmount == float.PositiveInfinity)
+                    if (accountEnumerator.Current.Creator == null || currencyAmount == float.PositiveInfinity)
                     {
                         --i;
                         continue;
@@ -926,7 +1039,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 // Build message
                 if (useTradeCount)
                     embed.AddField("Total trades", tradesCount.ToString("n0"), inline: true);
-                
+
                 embed.AddField("Amount in circulation", currency.Circulation.ToString("n0"), inline: true);
                 embed.AddAlignmentField();
                 if (!useTradeCount)
@@ -963,6 +1076,9 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 string fieldText = !string.IsNullOrEmpty(webServerURL) ? $"{webServerURL}/election/{election.Id}" : "Webserver URL not configured";
                 report.AddField("URL", fieldText);
 
+                // Settlement juristiction
+                report.AddField("Settlement", election.Settlement.Name, inline: true);
+
                 // Proposer name
                 report.AddField("Proposer", election.Creator.Name, inline: true);
 
@@ -977,10 +1093,10 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 string choiceDesc = string.Empty;
                 if (!election.Process.AnonymousVoting)
                 {
-                    foreach (RunoffVote vote in election.Votes)
+                    foreach (UserRunoffVote vote in election.UserVotes.Values)
                     {
                         string topChoiceName = null;
-                        int topChoiceID = vote.RankedVotes.FirstOrDefault();
+                        ElectionChoiceID topChoiceID = vote.RankedVotes.FirstOrDefault();
                         foreach (ElectionChoice choice in election.Choices)
                         {
                             if (choice.ID == topChoiceID)
@@ -990,6 +1106,22 @@ namespace Eco.Plugins.DiscordLink.Utilities
                             }
                         }
                         voteDesc += $"{vote.Voter.Name}\n";
+                        choiceDesc += $"{topChoiceName}\n";
+                    }
+
+                    foreach (TwitchVote vote in election.RawTwitchVotes.Values)
+                    {
+                        string topChoiceName = null;
+                        ElectionChoiceID topChoiceID = vote.ChoiceID;
+                        foreach (ElectionChoice choice in election.Choices)
+                        {
+                            if (choice.ID == topChoiceID)
+                            {
+                                topChoiceName = choice.Name;
+                                break;
+                            }
+                        }
+                        voteDesc += $"Twitch Vote\n";
                         choiceDesc += $"{topChoiceName}\n";
                     }
                 }
@@ -1198,7 +1330,7 @@ namespace Eco.Plugins.DiscordLink.Utilities
                 // Currency transfer description
                 string resultDesc;
                 float subTotal = RoundToAcceptedDigits(soldTotal) - RoundToAcceptedDigits(boughtTotal);
-                
+
                 if (Math.Abs(subTotal) <= 0.00f)
                 {
                     resultDesc = "No currency was exchanged.";
