@@ -58,7 +58,8 @@ namespace Eco.Plugins.DiscordLink.Modules
             if (linkedUser != null)
                 sender = linkedUser.EcoUser;
 
-            string messageContent = GetReadableContent(discordMessage);
+            string readableContent = GetReadableContent(discordMessage); 
+            string messageContent = readableContent;
             if (sender == null)
             {
                 DiscordMember memberAuthor = await discordMessage.Author.LookupMember();
@@ -68,10 +69,54 @@ namespace Eco.Plugins.DiscordLink.Modules
             {
                 messageContent = $"{DLConstants.ECO_DISCORDLINK_ICON} {messageContent}";
             }
+            
+            var ecoMessage = MessageUtils.FormatMessageForEcoChannel(messageContent, ecoChannel);
+            Message.SendChatRaw(sender, ecoMessage);
 
-            Message.SendChatRaw(sender, MessageUtils.FormatMessageForEcoChannel(messageContent, ecoChannel));
+            // forward message to other servers
+            IEnumerable<ChatChannelLink> chatLinks = DLConfig.ChatLinksForEcoChannel(ecoChannel);
+            foreach (var chatLink in chatLinks)
+            {
+                if (chatLink.Guild.Id == discordMessage.Channel.Guild.Id)
+                {
+                    continue;
+                }
+
+                ForwardMessageToDiscordChannel(
+                    readableContent, 
+                    $"[{GetGuildName(discordMessage.Channel.Guild)}] {discordMessage.Author.Username}",
+                    chatLink.Channel,
+                    chatLink.UseTimestamp,
+                    chatLink.HereAndEveryoneMentionPermission,
+                    chatLink.MentionPermissions
+                );
+            }            
             ++_opsCount;
         }
+        
+        private string GetGuildName(DiscordGuild guild)
+        {
+            switch (guild.Id)
+            {
+                case 662813412413276191:
+                    return "BCG";
+                case 433039858794233858:
+                    return "Comfy";
+                case 643910879200411668:
+                    return "Test";
+                default:
+                    return guild.Name;
+            }
+        }
+
+        private void ForwardMessageToDiscordChannel(string message, string citizenName, DiscordChannel channel, bool useTimestamp, GlobalMentionPermission globalMentionPermission, ChatLinkMentionPermissions chatlinkPermissions)
+        {
+            Logger.Trace($"Forwarding Discord message to Discord channel {channel.Name}");
+
+            bool allowGlobalMention = globalMentionPermission == GlobalMentionPermission.AnyUser;
+
+            _ = DiscordLink.Obj.Client.SendMessageAsync(channel, MessageUtils.FormatMessageForDiscord(message, channel, citizenName, useTimestamp, allowGlobalMention, chatlinkPermissions));
+        }           
 
         private string GetReadableContent(DiscordMessage message)
         {

@@ -3,6 +3,9 @@ using Eco.Moose.Tools.Logger;
 using Eco.Shared.Serialization;
 using System;
 using System.ComponentModel;
+using System.Linq;
+using Eco.Plugins.DiscordLink.Extensions;
+using Eco.Shared.Utils;
 
 namespace Eco.Plugins.DiscordLink
 {
@@ -60,6 +63,12 @@ namespace Eco.Plugins.DiscordLink
         [Browsable(false)]
         [Obsolete("Please use DiscordChannelId instead. This only exists for migration of the old Format.")]
         public string DiscordChannel { get; set;  } = DISCORD_CHANNEL_PROPERTY_DEPRECATED;
+        
+        [Browsable(false), JsonIgnore]
+        public DiscordGuild Guild { get; private set; } = null;
+
+        [Description("Discord Server by name or ID.")]
+        public string DiscordServer { get; set; } = string.Empty;        
 
         public override string ToString()
         {
@@ -81,10 +90,25 @@ namespace Eco.Plugins.DiscordLink
             if (DiscordChannelId == 0)
                 return false;
 
-            DiscordChannel channel = DiscordLink.Obj.Client.Guild.GetChannel(DiscordChannelId);
-            if (channel == null)
-                return false;
+            Guild = string.IsNullOrEmpty(DiscordServer) 
+                ? DiscordLink.Obj.Client.Guild
+                : DiscordServer.TryParseSnowflakeID(out ulong id)
+                    ? DiscordLink.Obj.Client.DSharpClient.Guilds.Values.FirstOrDefault(guild => guild.Id == id)
+                    : DiscordLink.Obj.Client.DSharpClient.Guilds.Values.FirstOrDefault(guild => guild.Name.EqualsCaseInsensitive(DiscordServer));
 
+            if (Guild == null)
+            {
+                Logger.Error($"Guild {DiscordServer} not found");
+                return false;
+            }
+
+            DiscordChannel channel = Guild.GetChannel(DiscordChannelId);
+            if (channel == null)
+            {
+                Logger.Error($"Channel {DiscordChannelId} not found in Guild {DiscordServer}");
+                return false;
+            }            
+            
             Channel = channel;
             return true;
         }
